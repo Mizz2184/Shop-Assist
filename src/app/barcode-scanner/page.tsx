@@ -124,12 +124,16 @@ export default function BarcodeScanner() {
               : 'bg-white text-black border-gray-300'
           }`}
         >
-          <option key="default" value="">
-            {language === 'es' ? 'Seleccionar cámara' : 'Select camera'}
-          </option>
-          {videoInputDevices.map(device => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label || (language === 'es' ? 'Cámara' : 'Camera')}
+          {[
+            { id: 'default', value: '', label: language === 'es' ? 'Seleccionar cámara' : 'Select camera' },
+            ...videoInputDevices.map(device => ({
+              id: device.deviceId,
+              value: device.deviceId,
+              label: device.label || (language === 'es' ? 'Cámara' : 'Camera')
+            }))
+          ].map(option => (
+            <option key={option.id} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>
