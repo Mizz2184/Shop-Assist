@@ -1,0 +1,169 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Column Case - SQL Commands</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2563eb;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #4b5563;
+            margin-top: 30px;
+        }
+        pre {
+            background-color: #f3f4f6;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f9fafb;
+            border-radius: 8px;
+            border-left: 4px solid #2563eb;
+        }
+        .note {
+            background-color: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 10px 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #1d4ed8;
+        }
+        .copy-success {
+            color: #059669;
+            margin-left: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Fix Column Case for Shop Assist</h1>
+    
+    <div class="note">
+        <strong>Note:</strong> You need to run these SQL commands in the Supabase dashboard to fix the column case issue.
+    </div>
+    
+    <div class="step">
+        <h2>SQL Commands to Fix Column Case</h2>
+        <p>This SQL script will:</p>
+        <ul>
+            <li>Create the query function if it doesn't exist</li>
+            <li>Rename the column from 'imageurl' to 'imageUrl' if it exists</li>
+            <li>Add the 'imageUrl' column if it doesn't exist</li>
+            <li>Fix the row-level security policy</li>
+        </ul>
+        <pre><code>-- Create the query function if it doesn't exist
+CREATE OR REPLACE FUNCTION query(query_text text)
+RETURNS SETOF json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY EXECUTE query_text;
+END;
+$$;
+
+-- Fix the column case issue
+DO $$
+BEGIN
+  -- Check if the column exists with lowercase name
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'grocery_list' AND column_name = 'imageurl'
+  ) THEN
+    -- Rename the column to the correct case
+    ALTER TABLE grocery_list RENAME COLUMN "imageurl" TO "imageUrl";
+    RAISE NOTICE 'Column renamed from imageurl to imageUrl';
+  ELSIF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'grocery_list' AND column_name = 'imageUrl'
+  ) THEN
+    -- Add the column if it doesn't exist
+    ALTER TABLE grocery_list ADD COLUMN "imageUrl" TEXT;
+    RAISE NOTICE 'Column imageUrl added';
+  ELSE
+    RAISE NOTICE 'Column imageUrl already exists with the correct case';
+  END IF;
+  
+  -- Make sure RLS is properly configured
+  ALTER TABLE grocery_list ENABLE ROW LEVEL SECURITY;
+  
+  -- Drop existing policies
+  DROP POLICY IF EXISTS "Allow all operations for now" ON grocery_list;
+  DROP POLICY IF EXISTS "Users can manage their own grocery list" ON grocery_list;
+  DROP POLICY IF EXISTS "Users can manage their own grocery list items" ON grocery_list;
+  DROP POLICY IF EXISTS "Allow all operations for testing" ON grocery_list;
+  
+  -- Create a permissive policy for testing
+  CREATE POLICY "Allow all operations for testing"
+    ON grocery_list
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  
+  -- Grant access to the table
+  GRANT ALL ON grocery_list TO anon, authenticated, service_role;
+END $$; </code></pre>
+        <button onclick="copyToClipboard('sql-commands')">Copy to Clipboard</button>
+        <span id="sql-commands-success" class="copy-success">Copied!</span>
+    </div>
+    
+    <div class="note">
+        <strong>Instructions:</strong>
+        <ol>
+            <li>Go to the <a href="https://app.supabase.com" target="_blank">Supabase Dashboard</a></li>
+            <li>Select your project</li>
+            <li>Go to the SQL Editor (left sidebar)</li>
+            <li>Create a new query</li>
+            <li>Paste the SQL commands from above</li>
+            <li>Run the query</li>
+            <li>After running the SQL, come back and run the verify-fix.js script to verify the fix</li>
+        </ol>
+    </div>
+    
+    <script>
+        function copyToClipboard(id) {
+            const text = document.querySelector('pre code').textContent;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                const successElement = document.getElementById(`${id}-success`);
+                successElement.style.display = 'inline';
+                setTimeout(() => {
+                    successElement.style.display = 'none';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

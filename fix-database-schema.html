@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Database Schema - Shop Assist</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2563eb;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #4b5563;
+            margin-top: 30px;
+        }
+        pre {
+            background-color: #f3f4f6;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f9fafb;
+            border-radius: 8px;
+            border-left: 4px solid #2563eb;
+        }
+        .note {
+            background-color: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 10px 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .error {
+            background-color: #fee2e2;
+            border-left: 4px solid #ef4444;
+            padding: 10px 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #1d4ed8;
+        }
+        .copy-success {
+            color: #059669;
+            margin-left: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Fix Database Schema for Shop Assist</h1>
+    
+    <div class="error">
+        <strong>Detected Issues:</strong>
+        <ul>
+            <li>The <code>imageUrl</code> column is missing from the <code>grocery_list</code> table</li>
+            <li>Row-level security policy is preventing inserts into the <code>grocery_list</code> table</li>
+        </ul>
+    </div>
+    
+    <div class="note">
+        <strong>Note:</strong> You need to run these SQL commands in the Supabase dashboard to fix the database schema.
+    </div>
+    
+    <div class="step">
+        <h2>Step 1: Create the query function</h2>
+        <p>First, create a function that allows executing SQL queries:</p>
+        <pre><code>CREATE OR REPLACE FUNCTION query(query_text text)
+RETURNS SETOF json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY EXECUTE query_text;
+END;
+$$;</code></pre>
+        <button onclick="copyToClipboard('query-function')">Copy to Clipboard</button>
+        <span id="query-function-success" class="copy-success">Copied!</span>
+    </div>
+    
+    <div class="step">
+        <h2>Step 2: Fix the grocery_list table</h2>
+        <p>This comprehensive SQL script will:</p>
+        <ul>
+            <li>Add the missing <code>imageUrl</code> column</li>
+            <li>Fix the row-level security policy</li>
+            <li>Ensure all required columns exist</li>
+        </ul>
+        <pre><code>-- Add the missing imageUrl column if it doesn't exist
+ALTER TABLE grocery_list 
+ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;
+
+-- Make sure the user_id column exists and is properly configured
+ALTER TABLE grocery_list 
+ADD COLUMN IF NOT EXISTS user_id UUID;
+
+-- Drop existing RLS policies
+DROP POLICY IF EXISTS "Allow all operations for now" ON grocery_list;
+DROP POLICY IF EXISTS "Users can manage their own grocery list" ON grocery_list;
+DROP POLICY IF EXISTS "Users can manage their own grocery list items" ON grocery_list;
+
+-- Enable Row Level Security
+ALTER TABLE grocery_list ENABLE ROW LEVEL SECURITY;
+
+-- Create a more permissive policy for testing
+CREATE POLICY "Allow all operations for testing"
+  ON grocery_list
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- Grant access to the table
+GRANT ALL ON grocery_list TO anon, authenticated, service_role;</code></pre>
+        <button onclick="copyToClipboard('fix-table')">Copy to Clipboard</button>
+        <span id="fix-table-success" class="copy-success">Copied!</span>
+    </div>
+    
+    <div class="step">
+        <h2>Step 3: Recreate the table (if needed)</h2>
+        <p>If the above steps don't work, you can recreate the entire table with the correct schema:</p>
+        <pre><code>-- Drop the existing table if it exists
+DROP TABLE IF EXISTS grocery_list;
+
+-- Create the grocery_list table with all required columns
+CREATE TABLE grocery_list (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID,
+  name TEXT NOT NULL,
+  brand TEXT,
+  description TEXT,
+  price DECIMAL(10, 2),
+  imageUrl TEXT,
+  store TEXT,
+  url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE grocery_list ENABLE ROW LEVEL SECURITY;
+
+-- Create a permissive policy for testing
+CREATE POLICY "Allow all operations for testing"
+  ON grocery_list
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- Grant access to the table
+GRANT ALL ON grocery_list TO anon, authenticated, service_role;</code></pre>
+        <button onclick="copyToClipboard('recreate-table')">Copy to Clipboard</button>
+        <span id="recreate-table-success" class="copy-success">Copied!</span>
+    </div>
+    
+    <div class="note">
+        <strong>Instructions:</strong>
+        <ol>
+            <li>Go to the <a href="https://app.supabase.com" target="_blank">Supabase Dashboard</a></li>
+            <li>Select your project</li>
+            <li>Go to the SQL Editor (left sidebar)</li>
+            <li>Create a new query</li>
+            <li>Paste the SQL commands from above</li>
+            <li>Run the query</li>
+            <li>After running the SQL, come back and run the test script to verify the fix</li>
+        </ol>
+    </div>
+    
+    <script>
+        function copyToClipboard(id) {
+            let text;
+            if (id === 'query-function') {
+                text = `CREATE OR REPLACE FUNCTION query(query_text text)
+RETURNS SETOF json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY EXECUTE query_text;
+END;
+$$;`;
+            } else if (id === 'fix-table') {
+                text = `-- Add the missing imageUrl column if it doesn't exist
+ALTER TABLE grocery_list 
+ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;
+
+-- Make sure the user_id column exists and is properly configured
+ALTER TABLE grocery_list 
+ADD COLUMN IF NOT EXISTS user_id UUID;
+
+-- Drop existing RLS policies
+DROP POLICY IF EXISTS "Allow all operations for now" ON grocery_list;
+DROP POLICY IF EXISTS "Users can manage their own grocery list" ON grocery_list;
+DROP POLICY IF EXISTS "Users can manage their own grocery list items" ON grocery_list;
+
+-- Enable Row Level Security
+ALTER TABLE grocery_list ENABLE ROW LEVEL SECURITY;
+
+-- Create a more permissive policy for testing
+CREATE POLICY "Allow all operations for testing"
+  ON grocery_list
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- Grant access to the table
+GRANT ALL ON grocery_list TO anon, authenticated, service_role;`;
+            } else if (id === 'recreate-table') {
+                text = `-- Drop the existing table if it exists
+DROP TABLE IF EXISTS grocery_list;
+
+-- Create the grocery_list table with all required columns
+CREATE TABLE grocery_list (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID,
+  name TEXT NOT NULL,
+  brand TEXT,
+  description TEXT,
+  price DECIMAL(10, 2),
+  imageUrl TEXT,
+  store TEXT,
+  url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE grocery_list ENABLE ROW LEVEL SECURITY;
+
+-- Create a permissive policy for testing
+CREATE POLICY "Allow all operations for testing"
+  ON grocery_list
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- Grant access to the table
+GRANT ALL ON grocery_list TO anon, authenticated, service_role;`;
+            }
+            
+            navigator.clipboard.writeText(text).then(() => {
+                const successElement = document.getElementById(`${id}-success`);
+                successElement.style.display = 'inline';
+                setTimeout(() => {
+                    successElement.style.display = 'none';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html> 

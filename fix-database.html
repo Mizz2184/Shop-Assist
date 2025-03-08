@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Database - Shop-Assist</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #0070f3;
+      margin-bottom: 20px;
+    }
+    .instructions {
+      background-color: #f7f7f7;
+      padding: 20px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+    .sql-container {
+      background-color: #f1f1f1;
+      padding: 20px;
+      border-radius: 5px;
+      position: relative;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      margin: 0;
+      font-family: monospace;
+    }
+    .copy-button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: #0070f3;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .copy-button:hover {
+      background-color: #0051a8;
+    }
+    .success-message {
+      display: none;
+      color: green;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Fix Database - Shop-Assist</h1>
+  
+  <div class="instructions">
+    <h2>Instructions:</h2>
+    <ol>
+      <li>Copy the SQL commands below.</li>
+      <li>Go to your <a href="https://app.supabase.com" target="_blank">Supabase dashboard</a>.</li>
+      <li>Navigate to the SQL Editor.</li>
+      <li>Paste the SQL commands and execute them.</li>
+      <li>After executing the SQL, run the check-table-schema.js script to verify the table has been fixed.</li>
+    </ol>
+  </div>
+  
+  <div class="sql-container">
+    <button class="copy-button" onclick="copySQL()">Copy SQL</button>
+    <pre id="sql-commands">-- Drop the existing table if it exists
+DROP TABLE IF EXISTS grocery_list;
+
+-- Create the grocery_list table with the correct schema
+CREATE TABLE grocery_list (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES auth.users(id),
+  name TEXT NOT NULL,
+  brand TEXT,
+  description TEXT,
+  price NUMERIC,
+  imageUrl TEXT,
+  store TEXT,
+  url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE grocery_list ENABLE ROW LEVEL SECURITY;
+
+-- Create policy for all operations
+CREATE POLICY "Users can manage their own grocery list items"
+  ON grocery_list
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Grant access to various roles
+GRANT ALL ON grocery_list TO anon, authenticated, service_role;</pre>
+    <div id="success-message" class="success-message">SQL copied to clipboard!</div>
+  </div>
+
+  <script>
+    function copySQL() {
+      const sqlCommands = document.getElementById('sql-commands').textContent;
+      navigator.clipboard.writeText(sqlCommands).then(() => {
+        const successMessage = document.getElementById('success-message');
+        successMessage.style.display = 'block';
+        setTimeout(() => {
+          successMessage.style.display = 'none';
+        }, 3000);
+      });
+    }
+  </script>
+</body>
+</html> 
