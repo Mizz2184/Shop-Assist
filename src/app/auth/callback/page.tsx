@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAppContext } from '@/contexts/AppContext';
 import { createClient } from '@supabase/supabase-js';
 
-export default function AuthCallback() {
+function AuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { language } = useAppContext();
@@ -44,27 +44,40 @@ export default function AuthCallback() {
   }, [router, searchParams, language]);
 
   return (
+    <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg text-center">
+      <h1 className="text-2xl font-bold mb-6">
+        {language === 'es' ? 'Procesando Autenticación' : 'Processing Authentication'}
+      </h1>
+      
+      {error ? (
+        <div className="bg-red-500 text-white p-3 rounded mb-4">
+          {error}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+          <p>
+            {language === 'es' 
+              ? 'Completando el proceso de inicio de sesión...' 
+              : 'Completing the login process...'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AuthCallback() {
+  return (
     <main className="min-h-screen p-4 md:p-8 flex items-center justify-center">
-      <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg text-center">
-        <h1 className="text-2xl font-bold mb-6">
-          {language === 'es' ? 'Procesando Autenticación' : 'Processing Authentication'}
-        </h1>
-        
-        {error ? (
-          <div className="bg-red-500 text-white p-3 rounded mb-4">
-            {error}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-            <p>
-              {language === 'es' 
-                ? 'Completando el proceso de inicio de sesión...' 
-                : 'Completing the login process...'}
-            </p>
-          </div>
-        )}
-      </div>
+      <Suspense fallback={
+        <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4 mx-auto"></div>
+          <p>Loading...</p>
+        </div>
+      }>
+        <AuthCallbackContent />
+      </Suspense>
     </main>
   );
 } 

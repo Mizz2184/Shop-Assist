@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ProductCard';
 import { Product } from '@/types/product';
 import { useAppContext } from '@/contexts/AppContext';
 
-export default function Home() {
+function HomeContent() {
   const searchParams = useSearchParams();
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,7 +52,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen">
+    <>
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold mb-6 text-center">
           {searchParams.get('query') ? (
@@ -118,6 +118,20 @@ export default function Home() {
           </p>
         </div>
       )}
+    </>
+  );
+}
+
+export default function Home() {
+  return (
+    <main className="min-h-screen">
+      <Suspense fallback={
+        <div className="flex justify-center items-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black dark:border-white"></div>
+        </div>
+      }>
+        <HomeContent />
+      </Suspense>
     </main>
   );
 } 
