@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { BrowserMultiFormatReader, Result, Exception } from '@zxing/library';
+import { 
+  BrowserMultiFormatReader, 
+  Result, 
+  Exception, 
+  BarcodeFormat,
+  DecodeHintType,
+  DecodeContinuouslyCallback
+} from '@zxing/library';
 import { useAppContext } from '@/contexts/AppContext';
 import { Product } from '@/types/product';
 import Link from 'next/link';
@@ -17,7 +24,9 @@ export default function BarcodeScanner() {
   const [error, setError] = useState<string>('');
   const [isAddingToList, setIsAddingToList] = useState(false);
   const [addSuccess, setAddSuccess] = useState(false);
+  const [scanAttempts, setScanAttempts] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const router = useRouter();
 
   // Function to detect mobile devices
@@ -28,9 +37,38 @@ export default function BarcodeScanner() {
     return false;
   };
 
+  // Create a new code reader with expanded format support
+  const createCodeReader = () => {
+    // Create hints with expanded format support
+    const hints = new Map();
+    
+    // Support all common product barcode formats
+    hints.set(
+      DecodeHintType.POSSIBLE_FORMATS, 
+      [
+        BarcodeFormat.EAN_13, 
+        BarcodeFormat.EAN_8, 
+        BarcodeFormat.UPC_A, 
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.CODE_39,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.ITF,
+        BarcodeFormat.DATA_MATRIX,
+        BarcodeFormat.QR_CODE
+      ]
+    );
+    
+    // Set additional hints for better performance
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    hints.set(DecodeHintType.ASSUME_GS1, false);
+    
+    return new BrowserMultiFormatReader(hints);
+  };
+
   useEffect(() => {
-    // Initialize barcode reader
-    const codeReader = new BrowserMultiFormatReader();
+    // Initialize barcode reader with expanded format support
+    const codeReader = createCodeReader();
+    codeReaderRef.current = codeReader;
 
     // Get available video devices
     codeReader.listVideoInputDevices()
@@ -60,14 +98,16 @@ export default function BarcodeScanner() {
         }
       })
       .catch((err: Error) => {
-        console.error(err);
+        console.error('Error listing video devices:', err);
         setError(language === 'es' 
           ? 'Error al acceder a la cámara. Por favor, asegúrese de que tiene permiso para usar la cámara.'
           : 'Error accessing camera. Please make sure you have camera permissions enabled.');
       });
 
     return () => {
-      codeReader.reset();
+      if (codeReaderRef.current) {
+        codeReaderRef.current.reset();
+      }
     };
   }, [language]);
 
@@ -83,52 +123,75 @@ export default function BarcodeScanner() {
     setError('');
     setScannedProduct(null);
     setAddSuccess(false);
+    setScanAttempts(0);
 
-    const codeReader = new BrowserMultiFormatReader();
+    // Create a new reader with expanded format support
+    if (!codeReaderRef.current) {
+      codeReaderRef.current = createCodeReader();
+    }
 
     try {
-      await codeReader.decodeFromVideoDevice(
-        selectedDeviceId,
-        'video',
-        async (result: Result | null, err: Exception | undefined) => {
-          if (result && result.getText() !== lastResult) {
-            const barcode = result.getText();
-            setLastResult(barcode);
-            
-            // Search for product by barcode
-            try {
-              const response = await fetch(`/api/products/barcode/${barcode}`);
-              if (response.ok) {
-                const product = await response.json();
-                setScannedProduct(product);
-                codeReader.reset(); // Stop scanning after successful scan
-                setIsScanning(false);
-                
-                // Vibrate on success (mobile devices)
-                if (navigator.vibrate) {
-                  navigator.vibrate(200);
-                }
-              } else {
-                const errorData = await response.json();
-                setError(language === 'es'
-                  ? `Producto no encontrado: ${errorData.error || ''}`
-                  : `Product not found: ${errorData.error || ''}`);
-              }
-            } catch (error) {
-              console.error('Error searching for product:', error);
-              setError(language === 'es'
-                ? 'Error al buscar el producto. Intente de nuevo.'
-                : 'Error searching for product. Please try again.');
-            }
-          }
-          if (err && !(err instanceof TypeError)) {
-            // Ignore TypeError as it's thrown when stopping the scan
-            console.error(err);
-          }
+      // Create flexible constraints
+      const constraints = {
+        video: {
+          deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+          facingMode: isMobile() ? "environment" : "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          aspectRatio: { ideal: 1.777777778 },
+          frameRate: { ideal: 30 }
         }
-      );
+      };
+
+      // Use the video element directly
+      const videoElement = document.getElementById('video') as HTMLVideoElement;
+      
+      if (!videoElement) {
+        throw new Error('Video element not found');
+      }
+
+      // First try with exact deviceId
+      try {
+        await codeReaderRef.current.decodeFromConstraints(
+          constraints,
+          videoElement,
+          handleScanResult
+        );
+      } catch (err) {
+        console.warn('Failed with exact constraints, trying with relaxed constraints:', err);
+        
+        // If that fails, try with just the facing mode
+        const relaxedConstraints = {
+          video: {
+            facingMode: isMobile() ? "environment" : "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+        
+        try {
+          await codeReaderRef.current.decodeFromConstraints(
+            relaxedConstraints,
+            videoElement,
+            handleScanResult
+          );
+        } catch (secondErr) {
+          console.warn('Failed with relaxed constraints, trying with minimal constraints:', secondErr);
+          
+          // If that also fails, try with minimal constraints
+          const minimalConstraints = {
+            video: true
+          };
+          
+          await codeReaderRef.current.decodeFromConstraints(
+            minimalConstraints,
+            videoElement,
+            handleScanResult
+          );
+        }
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Error starting scanner:', err);
       setError(language === 'es'
         ? 'Error al iniciar el escáner. Asegúrese de que su dispositivo tiene acceso a la cámara.'
         : 'Error starting scanner. Make sure your device has camera access.');
@@ -136,10 +199,76 @@ export default function BarcodeScanner() {
     }
   };
 
+  const handleScanResult: DecodeContinuouslyCallback = (result: Result | null, err: Exception | undefined) => {
+    if (result && result.getText() !== lastResult) {
+      const barcode = result.getText();
+      setLastResult(barcode);
+      
+      // Search for product by barcode
+      searchProduct(barcode);
+    }
+    
+    if (err) {
+      // Only show error after multiple attempts to avoid flickering for normal scanning process
+      if (err.name === 'NotFoundException') {
+        // This is normal during scanning, only show error after multiple consecutive failures
+        setScanAttempts(prev => {
+          const newCount = prev + 1;
+          // Only show the error message after 30 consecutive failures (about 5 seconds)
+          if (newCount > 30 && isScanning) {
+            console.log('Multiple scan failures, showing guidance');
+            setError(language === 'es'
+              ? 'No se detecta ningún código. Intente acercar la cámara al código de barras y asegúrese de que esté bien iluminado.'
+              : 'No barcode detected. Try moving the camera closer to the barcode and ensure it is well lit.');
+          }
+          return newCount;
+        });
+      } else if (!(err instanceof TypeError)) {
+        // For other errors, log them but don't necessarily show to user
+        console.error('Scan error:', err);
+      }
+    } else {
+      // Reset scan attempts counter when successful scan or no error
+      setScanAttempts(0);
+      setError('');
+    }
+  };
+
+  const searchProduct = async (barcode: string) => {
+    try {
+      const response = await fetch(`/api/products/barcode/${barcode}`);
+      if (response.ok) {
+        const product = await response.json();
+        setScannedProduct(product);
+        if (codeReaderRef.current) {
+          codeReaderRef.current.reset(); // Stop scanning after successful scan
+        }
+        setIsScanning(false);
+        
+        // Vibrate on success (mobile devices)
+        if (navigator.vibrate) {
+          navigator.vibrate(200);
+        }
+      } else {
+        const errorData = await response.json();
+        setError(language === 'es'
+          ? `Producto no encontrado: ${errorData.error || ''}`
+          : `Product not found: ${errorData.error || ''}`);
+      }
+    } catch (error) {
+      console.error('Error searching for product:', error);
+      setError(language === 'es'
+        ? 'Error al buscar el producto. Intente de nuevo.'
+        : 'Error searching for product. Please try again.');
+    }
+  };
+
   const stopScanning = () => {
-    const codeReader = new BrowserMultiFormatReader();
-    codeReader.reset();
+    if (codeReaderRef.current) {
+      codeReaderRef.current.reset();
+    }
     setIsScanning(false);
+    setScanAttempts(0);
   };
 
   const addToGroceryList = async () => {
@@ -183,6 +312,7 @@ export default function BarcodeScanner() {
     setLastResult('');
     setError('');
     setAddSuccess(false);
+    setScanAttempts(0);
   };
 
   const goToGroceryList = () => {
@@ -224,16 +354,12 @@ export default function BarcodeScanner() {
                   : 'bg-white text-black border-gray-300'
               }`}
             >
-              {[
-                { id: 'default', value: '', label: language === 'es' ? 'Seleccionar cámara' : 'Select camera' },
-                ...videoInputDevices.map(device => ({
-                  id: device.deviceId,
-                  value: device.deviceId,
-                  label: device.label || (language === 'es' ? 'Cámara' : 'Camera')
-                }))
-              ].map(option => (
-                <option key={option.id} value={option.value}>
-                  {option.label}
+              <option key="default-option" value="">
+                {language === 'es' ? 'Seleccionar cámara' : 'Select camera'}
+              </option>
+              {videoInputDevices.map((device, index) => (
+                <option key={`device-${index}-${device.deviceId || 'unknown'}`} value={device.deviceId}>
+                  {device.label || (language === 'es' ? 'Cámara' : 'Camera')}
                 </option>
               ))}
             </select>
@@ -245,6 +371,9 @@ export default function BarcodeScanner() {
                 id="video"
                 ref={videoRef}
                 className={`w-full aspect-[4/3] rounded-lg mb-4 ${isScanning ? 'block' : 'hidden'}`}
+                playsInline
+                muted
+                autoPlay
               />
               {isScanning && (
                 <div className="absolute top-0 left-0 right-0 bottom-0 flex items-center justify-center pointer-events-none">
@@ -269,6 +398,16 @@ export default function BarcodeScanner() {
               </button>
             )}
           </div>
+
+          {isScanning && (
+            <div className="mt-4 mb-8 text-center">
+              <p className="text-gray-500 dark:text-gray-400">
+                {language === 'es' 
+                  ? 'Apunte la cámara al código de barras del producto. Mantenga la cámara estable y asegúrese de que el código esté bien iluminado.'
+                  : 'Point the camera at the product barcode. Keep the camera steady and ensure the barcode is well lit.'}
+              </p>
+            </div>
+          )}
 
           <div className="mt-8 text-center">
             <p className="text-gray-500 dark:text-gray-400 mb-4">
