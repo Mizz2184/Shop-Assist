@@ -1,83 +1,75 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useAppContext } from '@/contexts/AppContext';
-import { createClient } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
-function AuthCallbackContent() {
+export default function AuthCallback() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { language } = useAppContext();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleCallback = async () => {
+    const handleAuthCallback = async () => {
       try {
-        const code = searchParams.get('code');
+        // Get the auth code from the URL
+        const hash = window.location.hash;
         
-        if (code) {
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-          const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-          const supabase = createClient(supabaseUrl, supabaseKey);
+        if (!hash) {
+          // If there's no hash, check for code in query params (for some OAuth providers)
+          const params = new URLSearchParams(window.location.search);
+          const code = params.get('code');
           
-          // Exchange the code for a session
-          await supabase.auth.exchangeCodeForSession(code);
+          if (!code) {
+            throw new Error('No authentication code found in URL');
+          }
         }
-
-        // Redirect to home page after a short delay
+        
+        // The supabase client will automatically handle the exchange of the code for a session
+        const { error } = await supabase.auth.getSession();
+        
+        if (error) {
+          throw error;
+        }
+        
+        // Redirect to dashboard on successful authentication
+        router.push('/dashboard');
+      } catch (err: any) {
+        console.error('Error in auth callback:', err);
+        setError(err.message || 'An error occurred during authentication');
+        
+        // Redirect to login page after a short delay if there's an error
         setTimeout(() => {
-          router.push('/');
-          router.refresh();
-        }, 2000);
-      } catch (err) {
-        console.error('Error handling auth callback:', err);
-        setError(
-          language === 'es'
-            ? 'Error al procesar la autenticación. Por favor, inténtelo de nuevo.'
-            : 'Error processing authentication. Please try again.'
-        );
+          router.push('/login');
+        }, 3000);
       }
     };
-
-    handleCallback();
-  }, [router, searchParams, language]);
+    
+    handleAuthCallback();
+  }, [router]);
 
   return (
-    <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg text-center">
-      <h1 className="text-2xl font-bold mb-6">
-        {language === 'es' ? 'Procesando Autenticación' : 'Processing Authentication'}
-      </h1>
-      
-      {error ? (
-        <div className="bg-red-500 text-white p-3 rounded mb-4">
-          {error}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-          <p>
-            {language === 'es' 
-              ? 'Completando el proceso de inicio de sesión...' 
-              : 'Completing the login process...'}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+      <div className="max-w-md w-full text-center">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+          {error ? 'Authentication Error' : 'Completing Authentication...'}
+        </h1>
+        
+        {error ? (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {error}
+          </div>
+        ) : (
+          <div className="flex justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        )}
+        
+        {error && (
+          <p className="text-gray-600 dark:text-gray-400 mt-4">
+            Redirecting you back to the login page...
           </p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
-  );
-}
-
-export default function AuthCallback() {
-  return (
-    <main className="min-h-screen p-4 md:p-8 flex items-center justify-center">
-      <Suspense fallback={
-        <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4 mx-auto"></div>
-          <p>Loading...</p>
-        </div>
-      }>
-        <AuthCallbackContent />
-      </Suspense>
-    </main>
   );
 } 

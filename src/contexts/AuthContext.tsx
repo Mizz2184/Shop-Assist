@@ -8,6 +8,9 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -15,6 +18,9 @@ const defaultContext: AuthContextType = {
   user: null,
   session: null,
   isLoading: true,
+  signIn: async () => ({ error: new Error('Not implemented') }),
+  signUp: async () => ({ error: new Error('Not implemented') }),
+  signInWithGoogle: async () => ({ error: new Error('Not implemented') }),
   signOut: async () => {},
 };
 
@@ -67,6 +73,47 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     };
   }, []);
 
+  const signIn = async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return { error };
+    } catch (error: any) {
+      console.error('Error signing in:', error);
+      return { error };
+    }
+  };
+
+  const signUp = async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+      return { error };
+    } catch (error: any) {
+      console.error('Error signing up:', error);
+      return { error };
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      return { error };
+    } catch (error: any) {
+      console.error('Error signing in with Google:', error);
+      return { error };
+    }
+  };
+
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -81,6 +128,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         user,
         session,
         isLoading,
+        signIn,
+        signUp,
+        signInWithGoogle,
         signOut,
       }}
     >
