@@ -104,10 +104,6 @@ export default function GroceryList() {
     }
   };
 
-  const handleBackToSearch = () => {
-    router.push('/');
-  };
-
   // Format price based on currency
   const formatPrice = (price: number) => {
     if (currency === 'USD') {
@@ -128,30 +124,10 @@ export default function GroceryList() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold mb-4 sm:mb-0">
+      <div className="mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold">
           {language === 'es' ? 'Lista de Compras' : 'Grocery List'}
         </h1>
-        <button
-          onClick={handleBackToSearch}
-          className="btn flex items-center bg-white text-black border border-black hover:bg-gray-100"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={1.5}
-            stroke="currentColor"
-            className="w-5 h-5 mr-2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-            />
-          </svg>
-          {language === 'es' ? 'Volver a Buscar' : 'Back to Search'}
-        </button>
       </div>
 
       {isLoading ? (
@@ -225,8 +201,8 @@ export default function GroceryList() {
           </div>
           
           {/* Total Price Display */}
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 shadow-lg">
-            <div className="container mx-auto flex justify-end items-center gap-2">
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 shadow-lg md:pl-64">
+            <div className="container mx-auto flex justify-start items-center gap-2 px-4">
               <span className="text-lg font-semibold">
                 {language === 'es' ? 'Total:' : 'Total:'}
               </span>

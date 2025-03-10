@@ -40,7 +40,18 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
       });
       
       if (!response.ok) {
-        throw new Error('Failed to add item to grocery list');
+        // Try to get more detailed error information
+        let errorMessage = 'Failed to add item to grocery list';
+        try {
+          const errorData = await response.json();
+          console.error('API error details:', errorData);
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (e) {
+          // If we can't parse the error response, use the default message
+        }
+        throw new Error(errorMessage);
       }
       
       // Show success state
@@ -76,13 +87,20 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
           priority={isPriority}
           className="object-contain p-4"
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+          onError={(e) => {
+            console.log('Image failed to load:', product.imageUrl);
+            // Fallback to placeholder image
+            const target = e.target as HTMLImageElement;
+            target.onerror = null; // Prevent infinite error loop
+            target.src = 'https://placehold.co/400x400?text=No+Image';
+          }}
         />
       </div>
       
       <div className="p-4 flex flex-col flex-grow">
         <div className="mb-4 flex-grow">
           <h3 className="font-medium text-lg mb-2 line-clamp-2">
-            {product.name}
+            {product.name || 'Product Name Unavailable'}
           </h3>
           {product.brand && (
             <p className="text-text-secondary text-sm mb-2">

@@ -29,6 +29,14 @@ const nextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'bodegacr.vtexassets.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'maxipali.vtexassets.com',
+      },
+      {
+        protocol: 'https',
         hostname: 'example.com',
       },
       {
@@ -42,6 +50,14 @@ const nextConfig = {
       {
         protocol: 'https',
         hostname: 'via.placeholder.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'unsplash.com',
       },
     ],
   },

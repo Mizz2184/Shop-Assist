@@ -1,252 +1,139 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '@/lib/supabase';
 
 // Fixed user ID for demo purposes
 const FIXED_USER_ID = '123e4567-e89b-12d3-a456-426614174000';
 
 // Get all items in the grocery list
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Fetch items from Supabase
     const { data, error } = await supabase
       .from('grocery_list')
       .select('*')
-      .eq('user_id', FIXED_USER_ID);
-
+      .eq('user_id', FIXED_USER_ID)
+      .order('created_at', { ascending: false });
+    
     if (error) {
       console.error('Error fetching grocery list:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json([], { status: 500 });
     }
-
-    // Transform data to ensure consistent field names
-    const transformedData = data.map(item => ({
-      id: item.id,
-      userId: item.user_id,
-      name: item.name,
-      brand: item.brand,
-      description: item.description,
-      price: item.price,
-      imageUrl: item.imageUrl || item.imageurl, // Handle both cases
-      store: item.store,
-      url: item.url,
-      createdAt: item.created_at
-    }));
-
-    return NextResponse.json(transformedData);
+    
+    return NextResponse.json(data || []);
   } catch (error) {
-    console.error('Unexpected error in GET /api/grocery-list:', error);
+    console.error('Grocery list API error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch grocery list' },
+      { error: 'Server error' },
       { status: 500 }
     );
   }
 }
 
-// Add a new item to the grocery list
+// Add an item to the grocery list
 export async function POST(request: NextRequest) {
   try {
-    // Parse the product data from the request
-    const product = await request.json();
+    const body = await request.json();
     
-    // Log the received product for debugging
-    console.log('Received product data:', JSON.stringify(product, null, 2));
+    // Log the received product data
+    console.log('Received product data:', JSON.stringify(body, null, 2));
     
-    // Generate a proper UUID for the product
-    // If the product ID is not in UUID format, generate a new one
-    let productId = product.id;
-    if (!isValidUUID(productId)) {
-      console.log(`Converting non-UUID product ID "${productId}" to UUID format`);
-      // Use the original ID as a seed for the UUID if possible
-      productId = uuidv4();
-    }
+    // Generate a unique ID
+    const id = uuidv4();
     
-    // Create a clean product object with default values for all fields
-    const cleanProduct = {
-      id: productId,
+    // Prepare the item for insertion
+    const item = {
+      id,
       user_id: FIXED_USER_ID,
-      name: product.name || 'Unknown Product',
-      brand: product.brand || '',
-      description: product.description || '',
-      price: typeof product.price === 'number' ? product.price : 0,
-      imageUrl: product.imageUrl || '',
-      store: product.store || '',
-      url: product.url || ''
+      name: body.name || 'Unknown Product',
+      brand: body.brand || '',
+      description: body.description || '',
+      price: typeof body.price === 'number' ? body.price : 0,
+      imageUrl: body.imageUrl || '',
+      store: body.store || '',
+      url: body.url || ''
+      // Removed category and ean fields as they might not exist in the table
     };
     
-    console.log('Cleaned product data:', JSON.stringify(cleanProduct, null, 2));
+    // Insert into Supabase
+    let { error } = await supabase
+      .from('grocery_list')
+      .insert(item);
     
-    // First attempt: Direct insert with all fields
-    try {
-      console.log('Attempting direct insert with all fields...');
-      const { data, error } = await supabase
-        .from('grocery_list')
-        .insert(cleanProduct)
-        .select()
-        .single();
-      
-      if (!error) {
-        console.log('Successfully added product with direct insert:', data);
-        return NextResponse.json({ success: true, item: data });
-      }
-      
-      console.error('Error with direct insert:', error);
-      
-      // If there's an error with imageUrl field, try with lowercase
-      if (error.message.includes('imageUrl')) {
-        console.log('Trying with lowercase imageurl...');
-        
-        const lowercaseProduct = {
-          ...cleanProduct,
-          imageurl: cleanProduct.imageUrl // Use lowercase field name
-        };
-        
-        // Remove the camelCase version
-        delete lowercaseProduct.imageUrl;
-        
-        const { data: lowercaseData, error: lowercaseError } = await supabase
-          .from('grocery_list')
-          .insert(lowercaseProduct)
-          .select()
-          .single();
-        
-        if (!lowercaseError) {
-          console.log('Successfully added product with lowercase imageurl:', lowercaseData);
-          return NextResponse.json({ success: true, item: lowercaseData });
-        }
-        
-        console.error('Error with lowercase imageurl:', lowercaseError);
-      }
-      
-      // Try with minimal fields but include imageUrl
-      console.log('Trying with minimal fields including imageUrl...');
-      const minimalProduct = {
-        id: cleanProduct.id,
-        user_id: cleanProduct.user_id,
-        name: cleanProduct.name,
-        price: cleanProduct.price,
-        imageUrl: cleanProduct.imageUrl,
-        store: cleanProduct.store
+    // If there's an error related to missing columns, try a more minimal insert
+    if (error && (error.message.includes('column') || error.code === 'PGRST204')) {
+      console.log('Trying minimal insert due to schema mismatch');
+      const minimalItem = {
+        id,
+        user_id: FIXED_USER_ID,
+        name: body.name || 'Unknown Product',
+        price: typeof body.price === 'number' ? body.price : 0,
+        store: body.store || '',
+        created_at: new Date().toISOString()
       };
       
-      const { data: minimalData, error: minimalError } = await supabase
+      const { error: minimalError } = await supabase
         .from('grocery_list')
-        .insert(minimalProduct)
-        .select()
-        .single();
-      
-      if (!minimalError) {
-        console.log('Successfully added product with minimal fields:', minimalData);
-        return NextResponse.json({ success: true, item: minimalData });
-      }
-      
-      console.error('Error with minimal fields:', minimalError);
-      
-      // Try with even more minimal fields as a last resort
-      console.log('Trying with absolute minimal fields...');
-      const absoluteMinimalProduct = {
-        id: cleanProduct.id,
-        user_id: cleanProduct.user_id,
-        name: cleanProduct.name,
-        price: cleanProduct.price
-      };
-      
-      const { data: absoluteMinimalData, error: absoluteMinimalError } = await supabase
-        .from('grocery_list')
-        .insert(absoluteMinimalProduct)
-        .select()
-        .single();
-      
-      if (!absoluteMinimalError) {
-        console.log('Successfully added product with absolute minimal fields:', absoluteMinimalData);
+        .insert(minimalItem);
         
-        // Try to update the record to add the image URL
-        const { error: updateError } = await supabase
-          .from('grocery_list')
-          .update({ 
-            imageUrl: cleanProduct.imageUrl,
-            store: cleanProduct.store,
-            brand: cleanProduct.brand,
-            description: cleanProduct.description,
-            url: cleanProduct.url
-          })
-          .eq('id', cleanProduct.id);
-          
-        if (updateError) {
-          console.error('Error updating product with additional fields:', updateError);
-        } else {
-          console.log('Successfully updated product with additional fields');
-        }
-        
-        return NextResponse.json({ success: true, item: absoluteMinimalData });
-      }
-      
-      console.error('Error with absolute minimal fields:', absoluteMinimalError);
-      
-      // If all attempts fail, return a detailed error
-      return NextResponse.json({
-        error: 'Failed to add product to grocery list after multiple attempts',
-        details: {
-          directError: error,
-          minimalError: minimalError,
-          absoluteMinimalError: absoluteMinimalError
-        }
-      }, { status: 500 });
-      
-    } catch (insertError) {
-      console.error('Unexpected error during insert attempts:', insertError);
-      return NextResponse.json({
-        error: 'Unexpected error during database operations',
-        details: insertError instanceof Error ? insertError.message : String(insertError)
-      }, { status: 500 });
+      error = minimalError;
     }
     
+    if (error) {
+      console.error('Error adding item to grocery list:', error);
+      return NextResponse.json(
+        { error: 'Failed to add item to grocery list', details: error },
+        { status: 500 }
+      );
+    }
+    
+    // Return success response with the item ID
+    return NextResponse.json({ 
+      id,
+      success: true 
+    });
   } catch (error) {
-    console.error('Error processing request:', error);
-    return NextResponse.json({
-      error: 'Failed to process request',
-      details: error instanceof Error ? error.message : String(error)
-    }, { status: 500 });
+    console.error('Error adding to grocery list:', error);
+    return NextResponse.json(
+      { error: 'Failed to add item to grocery list' },
+      { status: 500 }
+    );
   }
 }
 
-// Helper function to check if a string is a valid UUID
-function isValidUUID(str: string): boolean {
-  if (!str) return false;
-  
-  // UUID regex pattern
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  return uuidPattern.test(str);
-}
-
-// Delete an item from the grocery list
+// Remove an item from the grocery list
 export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
+    const id = request.nextUrl.searchParams.get('id');
+    
     if (!id) {
       return NextResponse.json(
-        { error: 'Product ID is required' },
+        { error: 'Item ID is required' },
         { status: 400 }
       );
     }
-
+    
+    // Delete from Supabase
     const { error } = await supabase
       .from('grocery_list')
       .delete()
       .eq('id', id)
       .eq('user_id', FIXED_USER_ID);
-
+    
     if (error) {
-      console.error('Error deleting product:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('Error removing item from grocery list:', error);
+      return NextResponse.json(
+        { error: 'Failed to remove item from grocery list' },
+        { status: 500 }
+      );
     }
-
+    
+    // Return success response
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Unexpected error in DELETE /api/grocery-list:', error);
+    console.error('Error removing from grocery list:', error);
     return NextResponse.json(
-      { error: 'Failed to delete product from grocery list' },
+      { error: 'Failed to remove item from grocery list' },
       { status: 500 }
     );
   }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Magnifying glass handle -->
+  <path d="M130 130L170 170" stroke="#4F46E5" stroke-width="12" stroke-linecap="round"/>
+  
+  <!-- Magnifying glass circle -->
+  <circle cx="85" cy="85" r="55" stroke="#4F46E5" stroke-width="12" fill="white"/>
+  
+  <!-- Decorative elements inside the glass -->
+  <circle cx="85" cy="85" r="30" fill="#EEF2FF"/>
+  <path d="M70 85H100" stroke="#4F46E5" stroke-width="6" stroke-linecap="round"/>
+  <path d="M85 70V100" stroke="#4F46E5" stroke-width="6" stroke-linecap="round"/>
+</svg> 

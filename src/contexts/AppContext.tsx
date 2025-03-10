@@ -18,6 +18,7 @@ interface AppContextType {
   translate: (text: string) => Promise<string>;
   groceryListCount: number;
   setGroceryListCount: (count: number) => void;
+  formatPrice: (price: number) => string;
 }
 
 const AppContext = createContext<AppContextType>({
@@ -32,6 +33,7 @@ const AppContext = createContext<AppContextType>({
   translate: async () => '',
   groceryListCount: 0,
   setGroceryListCount: () => {},
+  formatPrice: () => '',
 });
 
 export const useAppContext = () => useContext(AppContext);
@@ -111,14 +113,17 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     localStorage.setItem('currency', currency);
   }, [language, currency]);
 
-  // Translation function using Google Translate API
+  // Translation function using internal translation API
   const translate = async (text: string): Promise<string> => {
     // If language is Spanish or text is empty/null, return the original text
     if (language === 'es' || !text) return text || '';
     
     try {
-      // In a real app, you would call a translation API here
-      const response = await fetch('/api/translate', {
+      // Get the base URL for API calls
+      const baseUrl = window.location.origin;
+      
+      // Call our internal translation API
+      const response = await fetch(`${baseUrl}/api/translate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -143,6 +148,18 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     }
   };
 
+  // Format price according to selected currency
+  const formatPrice = (price: number): string => {
+    if (currency === 'USD') {
+      // Convert from CRC to USD
+      const usdPrice = price / exchangeRate;
+      return `$${usdPrice.toFixed(2)}`;
+    } else {
+      // Display in CRC
+      return `₡${price.toLocaleString()}`;
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -157,6 +174,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         translate,
         groceryListCount,
         setGroceryListCount,
+        formatPrice,
       }}
     >
       {children}
