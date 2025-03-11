@@ -100,7 +100,7 @@ const translations: Record<string, string> = {
   'cafe': 'coffee',
   'café': 'coffee',
   'café frío': 'cold brew coffee',
-  'capuccino': 'cappuccino',
+  'capuccino_alt': 'cappuccino',
   'te': 'tea',
   'té': 'tea',
   'cerveza': 'beer',
@@ -426,11 +426,9 @@ const translations: Record<string, string> = {
   'frío': 'cold',
   'brew': 'brew',
   'cold brew': 'cold brew',
-  'cold': 'cold',
   'coffee': 'coffee',
   'cappuccino': 'cappuccino',
   'capuchino': 'cappuccino',
-  'capuccino': 'cappuccino',
 };
 
 export async function POST(request: NextRequest) {
