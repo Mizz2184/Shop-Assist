@@ -7,47 +7,84 @@ export async function GET(request: NextRequest) {
   try {
     // Get the authorization header
     const authHeader = request.headers.get('Authorization');
+    console.log('Auth header present:', !!authHeader);
+    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('Missing or invalid auth header');
       return NextResponse.json({ error: 'Missing or invalid authorization header' }, { status: 401 });
     }
 
     // Extract the token
     const token = authHeader.split(' ')[1];
+    console.log('Token present:', !!token);
 
-    // Set the session in Supabase client
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Create a new Supabase client with the user's token
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        },
+        auth: {
+          persistSession: false
+        }
+      }
+    );
+
+    // Get the user with the token
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (authError) {
+      console.log('Auth error:', authError);
+      return NextResponse.json({ error: 'Unauthorized', details: authError }, { status: 401 });
     }
+    if (!user) {
+      console.log('No user found with token');
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+    console.log('User found:', user.id);
 
     // Get family groups where user is a member
-    const { data: memberData, error: memberError } = await supabase
+    const { data: memberData, error: memberError } = await supabaseClient
       .from('family_members')
       .select('family_id')
       .eq('user_id', user.id);
 
     if (memberError) {
-      console.error('Error fetching family memberships:', memberError);
-      return NextResponse.json({ error: 'Failed to fetch family groups' }, { status: 500 });
+      console.log('Error fetching family memberships:', memberError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch family groups', 
+        details: memberError 
+      }, { status: 500 });
     }
+    console.log('Member data found:', memberData?.length || 0, 'memberships');
 
-    const familyIds = memberData.map(member => member.family_id);
+    const familyIds = memberData?.map(member => member.family_id) || [];
 
     // Get the family groups
-    const { data: familyGroups, error: familyError } = await supabase
+    const { data: familyGroups, error: familyError } = await supabaseClient
       .from('family_groups')
       .select('*')
       .in('id', familyIds);
 
     if (familyError) {
-      console.error('Error fetching family groups:', familyError);
-      return NextResponse.json({ error: 'Failed to fetch family groups' }, { status: 500 });
+      console.log('Error fetching family groups:', familyError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch family groups', 
+        details: familyError 
+      }, { status: 500 });
     }
+    console.log('Family groups found:', familyGroups?.length || 0, 'groups');
 
-    return NextResponse.json(familyGroups);
+    return NextResponse.json(familyGroups || []);
   } catch (error) {
-    console.error('Unexpected error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Unexpected error in family GET route:', error);
+    return NextResponse.json({ 
+      error: 'Internal server error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
 

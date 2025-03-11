@@ -1,4 +1,8 @@
-export type FamilyRole = 'admin' | 'editor' | 'viewer';
+export enum FamilyRole {
+  ADMIN = 'admin',
+  EDITOR = 'editor',
+  VIEWER = 'viewer'
+}
 
 export interface FamilyGroup {
   id: string;

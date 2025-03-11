@@ -27,30 +27,56 @@ export const useFamily = (initialFamilyId?: string) => {
   // Fetch family groups
   const fetchFamilyGroups = useCallback(async () => {
     try {
+      console.log('Fetching family groups...');
       const response = await fetch('/api/family', {
         headers: {
           'Authorization': `Bearer ${session?.access_token}`
         }
       });
-      if (!response.ok) throw new Error('Failed to fetch family groups');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('Family groups API error:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: errorData
+        });
+        throw new Error(`Failed to fetch family groups: ${response.status} ${errorData ? JSON.stringify(errorData) : ''}`);
+      }
+
       const data = await response.json();
-      setFamilyGroups(data);
+      console.log('Family groups fetched:', data?.length || 0, 'groups');
+      
+      if (!Array.isArray(data)) {
+        console.error('Unexpected response format:', data);
+        throw new Error('Invalid response format from family groups API');
+      }
+
       return data;
     } catch (error) {
       console.error('Error fetching family groups:', error);
-      setError('Failed to fetch family groups');
-      return [];
+      throw error;
     }
   }, [session]);
 
   // Create family group
   const createFamilyGroup = useCallback(async (name: string) => {
     try {
+      setLoading(true);
+      setError(null);
+
+      if (!session?.access_token) {
+        const error = 'No session available';
+        console.error(error);
+        toast.error(error);
+        return null;
+      }
+
       const response = await fetch('/api/family', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({ name })
       });
@@ -64,13 +90,17 @@ export const useFamily = (initialFamilyId?: string) => {
         throw new Error(errorMessage);
       }
 
+      // Update the family groups state with the new group
       setFamilyGroups((prev) => [...prev, data]);
       toast.success('Family group created successfully');
       return data;
     } catch (error) {
       console.error('Error creating family group:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create family group');
       toast.error(error instanceof Error ? error.message : 'Failed to create family group');
       return null;
+    } finally {
+      setLoading(false);
     }
   }, [session]);
 
@@ -136,7 +166,6 @@ export const useFamily = (initialFamilyId?: string) => {
       });
       if (!response.ok) throw new Error('Failed to fetch family members');
       const data = await response.json();
-      setMembers(data);
       return data;
     } catch (error) {
       console.error('Error fetching family members:', error);
@@ -236,7 +265,6 @@ export const useFamily = (initialFamilyId?: string) => {
       });
       if (!response.ok) throw new Error('Failed to fetch invitations');
       const data = await response.json();
-      setInvitations(data);
       return data;
     } catch (error) {
       console.error('Error fetching invitations:', error);
@@ -303,7 +331,6 @@ export const useFamily = (initialFamilyId?: string) => {
       });
       if (!response.ok) throw new Error('Failed to fetch shared lists');
       const data = await response.json();
-      setSharedLists(data);
       return data;
     } catch (error) {
       console.error('Error fetching shared lists:', error);
@@ -450,53 +477,155 @@ export const useFamily = (initialFamilyId?: string) => {
 
   // Set current family and fetch its data
   const setFamily = useCallback(async (familyId: string | null) => {
-    if (!familyId) {
-      setCurrentFamily(null);
-      setMembers([]);
-      setInvitations([]);
-      setSharedLists([]);
-      return;
-    }
+    try {
+      setLoading(true);
+      setError(null);
 
-    const family = familyGroups.find((group) => group.id === familyId);
-    if (family) {
+      if (!session?.access_token) {
+        console.log('No session available, skipping family data fetch');
+        setCurrentFamily(null);
+        setMembers([]);
+        setInvitations([]);
+        setSharedLists([]);
+        return;
+      }
+
+      if (!familyId) {
+        setCurrentFamily(null);
+        setMembers([]);
+        setInvitations([]);
+        setSharedLists([]);
+        return;
+      }
+
+      const family = familyGroups.find((group) => group.id === familyId);
+      if (!family) {
+        console.error('Family not found:', familyId);
+        setError('Family not found');
+        return;
+      }
+
       setCurrentFamily(family);
-      await Promise.all([
-        fetchFamilyMembers(familyId),
-        fetchInvitations(familyId),
-        fetchSharedLists(familyId)
-      ]);
+      
+      // Fetch each data type independently to avoid one failure affecting others
+      const fetchPromises = [];
+
+      try {
+        const membersPromise = fetchFamilyMembers(familyId)
+          .then(result => {
+            if (result) setMembers(result);
+          })
+          .catch(error => {
+            console.error('Error fetching family members:', error);
+          });
+        fetchPromises.push(membersPromise);
+
+        const invitationsPromise = fetchInvitations(familyId)
+          .then(result => {
+            if (result) setInvitations(result);
+          })
+          .catch(error => {
+            console.error('Error fetching invitations:', error);
+          });
+        fetchPromises.push(invitationsPromise);
+
+        const listsPromise = fetchSharedLists(familyId)
+          .then(result => {
+            if (result) setSharedLists(result);
+          })
+          .catch(error => {
+            console.error('Error fetching shared lists:', error);
+          });
+        fetchPromises.push(listsPromise);
+
+        // Wait for all fetches to complete
+        await Promise.all(fetchPromises);
+      } catch (error) {
+        console.error('Error fetching family data:', error);
+        setError('Failed to fetch family data');
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [familyGroups, fetchFamilyMembers, fetchInvitations, fetchSharedLists]);
+  }, [familyGroups, fetchFamilyMembers, fetchInvitations, fetchSharedLists, session]);
 
   // Initialize family groups and current family
   useEffect(() => {
-    if (!session?.access_token) {
-      console.log('No session available, skipping initial data fetch');
-      setLoading(false);
-      return;
-    }
+    let isMounted = true;
 
     const initializeFamily = async () => {
+      if (!isMounted) return;
+      
       try {
+        setLoading(true);
+        setError(null);
+
+        if (!session?.access_token) {
+          console.log('No session available, waiting for session...');
+          setFamilyGroups([]);
+          setCurrentFamily(null);
+          setLoading(false);
+          return;
+        }
+
+        console.log('Starting family initialization...');
         const groups = await fetchFamilyGroups();
-        if (initialFamilyId) {
+        
+        if (!isMounted) return;
+        
+        console.log('Family groups initialized:', groups?.length || 0, 'groups found');
+        setFamilyGroups(groups || []);
+
+        // If we have an initial family ID and groups, set it before marking loading as complete
+        if (groups && groups.length > 0 && initialFamilyId) {
+          console.log('Setting initial family:', initialFamilyId);
           const family = groups.find((g: FamilyGroup) => g.id === initialFamilyId);
           if (family) {
-            setFamily(family);
+            setCurrentFamily(family);
+            // Fetch additional data in the background
+            Promise.all([
+              fetchFamilyMembers(family.id).then(result => {
+                if (result && isMounted) setMembers(result);
+              }),
+              fetchInvitations(family.id).then(result => {
+                if (result && isMounted) setInvitations(result);
+              }),
+              fetchSharedLists(family.id).then(result => {
+                if (result && isMounted) setSharedLists(result);
+              })
+            ]).catch(error => {
+              console.error('Error fetching family data:', error);
+            });
           }
         }
-        await fetchNotifications();
+
+        // Set loading to false after we have set both groups and initial family
+        if (isMounted) {
+          setLoading(false);
+        }
+
+        // Fetch notifications in the background
+        fetchNotifications().catch(error => {
+          console.error('Error fetching notifications:', error);
+        });
+
       } catch (error) {
         console.error('Error initializing family:', error);
-        setError('Failed to initialize family data');
-      } finally {
-        setLoading(false);
+        if (isMounted) {
+          setError(error instanceof Error ? error.message : 'Failed to initialize family data');
+          setFamilyGroups([]);
+          setCurrentFamily(null);
+          setLoading(false);
+        }
       }
     };
 
     initializeFamily();
-  }, [fetchFamilyGroups, fetchNotifications, initialFamilyId, setFamily, session]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchFamilyGroups, fetchNotifications, initialFamilyId, fetchFamilyMembers, fetchInvitations, fetchSharedLists, session]);
 
   // Set up real-time updates when current family changes
   useEffect(() => {

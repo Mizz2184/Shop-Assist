@@ -1,14 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
+import { createClient } from '@supabase/supabase-js';
 
 // Create a new invitation
 export async function POST(request: NextRequest) {
   try {
+    // Get the authorization header
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Missing or invalid authorization header' }, { status: 401 });
+    }
+
+    // Extract the token
+    const token = authHeader.split(' ')[1];
+
+    // Create a new Supabase client with the user's token
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        },
+        auth: {
+          persistSession: false
+        }
+      }
+    );
+
     const { familyId, email, role = 'editor' } = await request.json();
 
     // Get the current user's ID
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -17,7 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is an admin of the family group
-    const { data: member, error: memberError } = await supabase
+    const { data: member, error: memberError } = await supabaseClient
       .from('family_members')
       .select('role')
       .eq('family_id', familyId)
@@ -32,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is already a member
-    const { data: existingMember } = await supabase
+    const { data: existingMember } = await supabaseClient
       .from('family_members')
       .select('id')
       .eq('family_id', familyId)
@@ -47,7 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if there's already a pending invitation
-    const { data: existingInvitation } = await supabase
+    const { data: existingInvitation } = await supabaseClient
       .from('family_invitations')
       .select('id')
       .eq('family_id', familyId)
@@ -63,7 +89,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the invitation
-    const { data: invitation, error: inviteError } = await supabase
+    const { data: invitation, error: inviteError } = await supabaseClient
       .from('family_invitations')
       .insert({
         id: uuidv4(),
@@ -101,6 +127,31 @@ export async function POST(request: NextRequest) {
 // Get invitations for a family group
 export async function GET(request: NextRequest) {
   try {
+    // Get the authorization header
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Missing or invalid authorization header' }, { status: 401 });
+    }
+
+    // Extract the token
+    const token = authHeader.split(' ')[1];
+
+    // Create a new Supabase client with the user's token
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        },
+        auth: {
+          persistSession: false
+        }
+      }
+    );
+
     const { searchParams } = new URL(request.url);
     const familyId = searchParams.get('familyId');
 
@@ -112,7 +163,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get the current user's ID
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -121,7 +172,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user is a member of the family group
-    const { data: member, error: memberError } = await supabase
+    const { data: member, error: memberError } = await supabaseClient
       .from('family_members')
       .select('role')
       .eq('family_id', familyId)
@@ -136,7 +187,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all pending invitations for the family group
-    const { data: invitations, error: inviteError } = await supabase
+    const { data: invitations, error: inviteError } = await supabaseClient
       .from('family_invitations')
       .select('*')
       .eq('family_id', familyId)

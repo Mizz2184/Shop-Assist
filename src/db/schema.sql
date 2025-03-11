@@ -228,11 +228,11 @@ CREATE POLICY "Users can view family members"
     USING (
         -- Users can see their own membership
         user_id = auth.uid()
-        -- Or they're the creator of the family group
+        -- Or they're a member of the same family group
         OR EXISTS (
-            SELECT 1 FROM family_groups
-            WHERE id = family_members.family_id
-            AND created_by = auth.uid()
+            SELECT 1 FROM family_members AS fm
+            WHERE fm.family_id = family_members.family_id
+            AND fm.user_id = auth.uid()
         )
     );
 

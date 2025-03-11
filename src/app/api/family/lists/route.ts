@@ -1,14 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 
 // Create a new shared grocery list
 export async function POST(request: NextRequest) {
   try {
+    // Get the authorization header
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Missing or invalid authorization header' }, { status: 401 });
+    }
+
+    // Extract the token
+    const token = authHeader.split(' ')[1];
+
+    // Create a new Supabase client with the user's token
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        },
+        auth: {
+          persistSession: false
+        }
+      }
+    );
+
     const { familyId, name } = await request.json();
 
     // Get the current user's ID
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -17,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is a member of the family group
-    const { data: member, error: memberError } = await supabase
+    const { data: member, error: memberError } = await supabaseClient
       .from('family_members')
       .select('role')
       .eq('family_id', familyId)
@@ -32,7 +57,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the shared list
-    const { data: list, error: listError } = await supabase
+    const { data: list, error: listError } = await supabaseClient
       .from('shared_grocery_lists')
       .insert({
         id: uuidv4(),
@@ -52,7 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Log the activity
-    await supabase
+    await supabaseClient
       .from('list_activity_log')
       .insert({
         list_id: list.id,
@@ -74,6 +99,31 @@ export async function POST(request: NextRequest) {
 // Get shared grocery lists for a family
 export async function GET(request: NextRequest) {
   try {
+    // Get the authorization header
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Missing or invalid authorization header' }, { status: 401 });
+    }
+
+    // Extract the token
+    const token = authHeader.split(' ')[1];
+
+    // Create a new Supabase client with the user's token
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        },
+        auth: {
+          persistSession: false
+        }
+      }
+    );
+
     const { searchParams } = new URL(request.url);
     const familyId = searchParams.get('familyId');
 
@@ -85,7 +135,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get the current user's ID
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -94,7 +144,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user is a member of the family group
-    const { data: member, error: memberError } = await supabase
+    const { data: member, error: memberError } = await supabaseClient
       .from('family_members')
       .select('role')
       .eq('family_id', familyId)
@@ -109,7 +159,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all shared lists for the family group
-    const { data: lists, error: listError } = await supabase
+    const { data: lists, error: listError } = await supabaseClient
       .from('shared_grocery_lists')
       .select(`
         *,
