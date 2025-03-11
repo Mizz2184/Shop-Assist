@@ -1,15 +1,27 @@
 'use client';
 
 import { useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function Sidebar() {
+interface SidebarProps {
+  setIsSidebarOpen?: (isOpen: boolean) => void;
+}
+
+export default function Sidebar({ setIsSidebarOpen }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user } = useAuth();
 
   const isActive = (path: string) => pathname === path;
+
+  const handleNavigation = (href: string) => {
+    if (setIsSidebarOpen) {
+      setIsSidebarOpen(false);
+    }
+    router.push(href);
+  };
 
   const navigation = [
     {
@@ -85,7 +97,7 @@ export default function Sidebar() {
     <aside className="w-sidebar bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 flex flex-col h-full">
       {/* Logo Section */}
       <div className="h-16 flex items-center px-4 border-b border-gray-200 dark:border-gray-800">
-        <Link href="/" className="flex items-center gap-2">
+        <button onClick={() => handleNavigation('/')} className="flex items-center gap-2">
           <div className="w-8 h-8 bg-black dark:bg-white rounded flex items-center justify-center">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -103,16 +115,16 @@ export default function Sidebar() {
           <span className="text-lg font-semibold text-black dark:text-white">
             Shop Assist
           </span>
-        </Link>
+        </button>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
         {navigation.map((item) => (
-          <Link
+          <button
             key={item.name}
-            href={item.href}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            onClick={() => handleNavigation(item.href)}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
               isActive(item.href)
                 ? 'bg-black dark:bg-white text-white dark:text-black'
                 : 'text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-900'
@@ -120,7 +132,7 @@ export default function Sidebar() {
           >
             {item.icon}
             <span>{item.name}</span>
-          </Link>
+          </button>
         ))}
       </nav>
 
@@ -141,15 +153,15 @@ export default function Sidebar() {
             </div>
           </div>
         ) : (
-          <Link
-            href="/auth/signin"
+          <button
+            onClick={() => handleNavigation('/auth/signin')}
             className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
             </svg>
             <span>Sign In</span>
-          </Link>
+          </button>
         )}
       </div>
     </aside>

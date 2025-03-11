@@ -125,7 +125,11 @@ export default function GroceryList() {
         <h1 className="text-2xl font-bold">
           {language === 'es' ? 'Lista de Compras' : 'Grocery List'}
         </h1>
-        <ShareList listId={listId} />
+        <ShareList 
+          listId={listId} 
+          listName={language === 'es' ? 'Lista de Compras' : 'Grocery List'} 
+          items={groceryList}
+        />
       </div>
 
       {isLoading ? (

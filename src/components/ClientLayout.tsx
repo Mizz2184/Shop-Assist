@@ -3,27 +3,13 @@
 import { useState } from 'react';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
-import { AppProvider } from '../contexts/AppContext';
-import { AuthProvider } from '../contexts/AuthContext';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ClientLayoutProps {
   children: React.ReactNode;
 }
 
-// Wrapper component that provides context
 export default function ClientLayout({ children }: ClientLayoutProps) {
-  return (
-    <AuthProvider>
-      <AppProvider>
-        <ClientLayoutContent>{children}</ClientLayoutContent>
-      </AppProvider>
-    </AuthProvider>
-  );
-}
-
-// Inner component that can use the context
-function ClientLayoutContent({ children }: ClientLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user } = useAuth();
 
@@ -47,7 +33,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
     <div className="flex h-screen bg-white dark:bg-black text-black dark:text-white transition-colors duration-200">
       {/* Sidebar */}
       <div className={`fixed inset-0 z-40 transition-transform transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
-        <Sidebar />
+        <Sidebar setIsSidebarOpen={setIsSidebarOpen} />
       </div>
 
       {/* Main Content */}

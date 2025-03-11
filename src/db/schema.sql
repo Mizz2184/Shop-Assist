@@ -553,4 +553,66 @@ if (!isValidEAN(ean)) {
   return NextResponse.json({ 
     error: 'Invalid barcode format or check digit' 
   }, { status: 400 });
-} 
+}
+
+-- Enable RLS on shared_list_items table
+ALTER TABLE shared_list_items ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view shared list items" ON shared_list_items;
+DROP POLICY IF EXISTS "Users can insert shared list items" ON shared_list_items;
+DROP POLICY IF EXISTS "Users can update shared list items" ON shared_list_items;
+DROP POLICY IF EXISTS "Users can delete shared list items" ON shared_list_items;
+
+-- Create policies for shared_list_items
+CREATE POLICY "Users can view shared list items"
+    ON shared_list_items FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM shared_grocery_lists sl
+            JOIN family_members fm ON sl.family_id = fm.family_id
+            WHERE sl.id = shared_list_items.list_id
+            AND fm.user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can insert shared list items"
+    ON shared_list_items FOR INSERT
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM shared_grocery_lists sl
+            JOIN family_members fm ON sl.family_id = fm.family_id
+            WHERE sl.id = list_id
+            AND fm.user_id = auth.uid()
+            AND fm.role IN ('admin', 'editor')
+        )
+    );
+
+CREATE POLICY "Users can update shared list items"
+    ON shared_list_items FOR UPDATE
+    USING (
+        EXISTS (
+            SELECT 1 FROM shared_grocery_lists sl
+            JOIN family_members fm ON sl.family_id = fm.family_id
+            WHERE sl.id = shared_list_items.list_id
+            AND fm.user_id = auth.uid()
+            AND fm.role IN ('admin', 'editor')
+        )
+    );
+
+CREATE POLICY "Users can delete shared list items"
+    ON shared_list_items FOR DELETE
+    USING (
+        EXISTS (
+            SELECT 1 FROM shared_grocery_lists sl
+            JOIN family_members fm ON sl.family_id = fm.family_id
+            WHERE sl.id = shared_list_items.list_id
+            AND fm.user_id = auth.uid()
+            AND fm.role IN ('admin', 'editor')
+        )
+    );
+
+-- Grant access to the table
+GRANT ALL ON shared_list_items TO authenticated;
+GRANT ALL ON shared_list_items TO anon;
+GRANT ALL ON shared_list_items TO service_role; 

@@ -7,10 +7,16 @@ import { supabase } from '@/lib/supabase';
 import { Product } from '@/types/product';
 import { useAppContext } from '@/contexts/AppContext';
 
+interface SharedListItem extends Product {
+  quantity: number;
+  notes?: string;
+}
+
 export default function SharedList() {
   const { id } = useParams();
   const { language, currency, exchangeRate } = useAppContext();
-  const [groceryList, setGroceryList] = useState<Product[]>([]);
+  const [listName, setListName] = useState('');
+  const [groceryList, setGroceryList] = useState<SharedListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,16 +26,34 @@ export default function SharedList() {
         setIsLoading(true);
         setError(null);
 
-        const { data: list, error: fetchError } = await supabase
-          .from('grocery_list')
-          .select('*')
-          .eq('id', id);
+        // First get the shared list details
+        const { data: listData, error: listError } = await supabase
+          .from('shared_grocery_lists')
+          .select(`
+            id,
+            name,
+            shared_list_items (
+              quantity,
+              notes,
+              products (*)
+            )
+          `)
+          .eq('id', id)
+          .single();
 
-        if (fetchError) {
-          throw new Error(fetchError.message);
-        }
+        if (listError) throw listError;
+        if (!listData) throw new Error('List not found');
 
-        setGroceryList(list || []);
+        setListName(listData.name);
+
+        // Transform the data structure
+        const items = listData.shared_list_items.map((item: any) => ({
+          ...item.products,
+          quantity: item.quantity,
+          notes: item.notes
+        }));
+
+        setGroceryList(items);
       } catch (err) {
         console.error('Error fetching shared list:', err);
         setError(
@@ -78,7 +102,7 @@ export default function SharedList() {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold mb-6">
-        {language === 'es' ? 'Lista de Compras Compartida' : 'Shared Grocery List'}
+        {listName || (language === 'es' ? 'Lista de Compras Compartida' : 'Shared Grocery List')}
       </h1>
 
       {groceryList.length === 0 ? (
@@ -112,6 +136,11 @@ export default function SharedList() {
                     </span>
                     <span className="font-bold">{formatPrice(product.price)}</span>
                   </div>
+                  {product.notes && (
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                      {product.notes}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
