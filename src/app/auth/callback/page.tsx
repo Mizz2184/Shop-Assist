@@ -11,26 +11,49 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        // Get the auth code from the URL
+        // First check if we already have a session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (session) {
+          // If we have a valid session, redirect to dashboard
+          router.push('/dashboard');
+          return;
+        }
+
+        // If no session, try to get auth code from URL
         const hash = window.location.hash;
+        let code = null;
         
-        if (!hash) {
-          // If there's no hash, check for code in query params (for some OAuth providers)
-          const params = new URLSearchParams(window.location.search);
-          const code = params.get('code');
-          
-          if (!code) {
-            throw new Error('No authentication code found in URL');
+        if (hash) {
+          // Parse hash parameters
+          const hashParams = new URLSearchParams(hash.substring(1));
+          code = hashParams.get('access_token') || hashParams.get('code');
+        }
+        
+        if (!code) {
+          // Check query parameters
+          const queryParams = new URLSearchParams(window.location.search);
+          code = queryParams.get('code');
+        }
+        
+        if (!code) {
+          // No code found in URL, check if we're in an error state
+          const errorParam = new URLSearchParams(window.location.search).get('error');
+          if (errorParam) {
+            throw new Error(errorParam);
           }
+          
+          // If no error parameter and no code, throw generic error
+          throw new Error('No authentication code found in URL');
         }
+
+        // Exchange the code for a session
+        const { error: authError } = await supabase.auth.getSession();
         
-        // The supabase client will automatically handle the exchange of the code for a session
-        const { error } = await supabase.auth.getSession();
-        
-        if (error) {
-          throw error;
+        if (authError) {
+          throw authError;
         }
-        
+
         // Redirect to dashboard on successful authentication
         router.push('/dashboard');
       } catch (err: any) {

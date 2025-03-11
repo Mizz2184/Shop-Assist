@@ -99,6 +99,8 @@ const translations: Record<string, string> = {
   'jugo': 'juice',
   'cafe': 'coffee',
   'café': 'coffee',
+  'café frío': 'cold brew coffee',
+  'capuccino': 'cappuccino',
   'te': 'tea',
   'té': 'tea',
   'cerveza': 'beer',
@@ -236,6 +238,199 @@ const translations: Record<string, string> = {
   'en': 'in',
   'para': 'for',
   'por': 'by',
+  'el': 'the',
+  'la': 'the',
+  'los': 'the',
+  'las': 'the',
+  'un': 'a',
+  'una': 'a',
+  'unos': 'some',
+  'unas': 'some',
+  'este': 'this',
+  'esta': 'this',
+  'estos': 'these',
+  'estas': 'these',
+  'ese': 'that',
+  'esa': 'that',
+  'esos': 'those',
+  'esas': 'those',
+  'mi': 'my',
+  'mis': 'my',
+  'tu': 'your',
+  'tus': 'your',
+  'su': 'their',
+  'sus': 'their',
+  'nuestro': 'our',
+  'nuestra': 'our',
+  'nuestros': 'our',
+  'nuestras': 'our',
+  'que': 'that',
+  'cual': 'which',
+  'quien': 'who',
+  'donde': 'where',
+  'cuando': 'when',
+  'como': 'how',
+  'por qué': 'why',
+  'porque': 'because',
+  'pero': 'but',
+  'pues': 'well',
+  'así': 'so',
+  'también': 'also',
+  'sin embargo': 'however',
+  'no obstante': 'nevertheless',
+  'aunque': 'although',
+  'mientras': 'while',
+  'durante': 'during',
+  'después': 'after',
+  'antes': 'before',
+  'luego': 'then',
+  'ahora': 'now',
+  'hoy': 'today',
+  'ayer': 'yesterday',
+  'mañana': 'tomorrow',
+  'siempre': 'always',
+  'nunca': 'never',
+  'jamás': 'never',
+  'aquí': 'here',
+  'allí': 'there',
+  'allá': 'over there',
+  'dentro': 'inside',
+  'fuera': 'outside',
+  'arriba': 'up',
+  'abajo': 'down',
+  'cerca': 'near',
+  'lejos': 'far',
+  'delante': 'in front',
+  'detrás': 'behind',
+  'sobre': 'on',
+  'bajo': 'under',
+  'junto': 'next to',
+  'alrededor': 'around',
+  'través': 'through',
+  'hacia': 'towards',
+  'según': 'according to',
+  'excepto': 'except',
+  'salvo': 'except for',
+  'incluso': 'even',
+  'asimismo': 'likewise',
+  'igualmente': 'equally',
+  'mejor': 'better',
+  'peor': 'worse',
+  'mayor': 'greater',
+  'menor': 'lesser',
+  'tan': 'so',
+  'tanto': 'so much',
+  'mucho': 'much',
+  'poco': 'little',
+  'bastante': 'quite',
+  'demasiado': 'too much',
+  'muy': 'very',
+  'casi': 'almost',
+  'aproximadamente': 'approximately',
+  'exactamente': 'exactly',
+  'solamente': 'only',
+  'únicamente': 'solely',
+  'principalmente': 'mainly',
+  'especialmente': 'especially',
+  'particularmente': 'particularly',
+  'generalmente': 'generally',
+  'usualmente': 'usually',
+  'normalmente': 'normally',
+  'regularmente': 'regularly',
+  'frecuentemente': 'frequently',
+  'ocasionalmente': 'occasionally',
+  'raramente': 'rarely',
+  'apenas': 'barely',
+  'probablemente': 'probably',
+  'posiblemente': 'possibly',
+  'quizás': 'maybe',
+  'tal vez': 'perhaps',
+  'acaso': 'perhaps',
+  'seguramente': 'surely',
+  'ciertamente': 'certainly',
+  'definitivamente': 'definitely',
+  'absolutamente': 'absolutely',
+  'completamente': 'completely',
+  'totalmente': 'totally',
+  'enteramente': 'entirely',
+  'parcialmente': 'partially',
+  'gradualmente': 'gradually',
+  'progresivamente': 'progressively',
+  'rápidamente': 'quickly',
+  'lentamente': 'slowly',
+  'suavemente': 'smoothly',
+  'fuertemente': 'strongly',
+  'débilmente': 'weakly',
+  'fácilmente': 'easily',
+  'difícilmente': 'hardly',
+  'correctamente': 'correctly',
+  'incorrectamente': 'incorrectly',
+  'adecuadamente': 'adequately',
+  'inadecuadamente': 'inadequately',
+  'perfectamente': 'perfectly',
+  'imperfectamente': 'imperfectly',
+  'naturalmente': 'naturally',
+  'artificialmente': 'artificially',
+  'voluntariamente': 'voluntarily',
+  'involuntariamente': 'involuntarily',
+  'conscientemente': 'consciously',
+  'inconscientemente': 'unconsciously',
+  'automáticamente': 'automatically',
+  'manualmente': 'manually',
+  'personalmente': 'personally',
+  'profesionalmente': 'professionally',
+  'comercialmente': 'commercially',
+  'industrialmente': 'industrially',
+  'técnicamente': 'technically',
+  'científicamente': 'scientifically',
+  'teóricamente': 'theoretically',
+  'prácticamente': 'practically',
+  'económicamente': 'economically',
+  'financieramente': 'financially',
+  'socialmente': 'socially',
+  'culturalmente': 'culturally',
+  'políticamente': 'politically',
+  'históricamente': 'historically',
+  'tradicionalmente': 'traditionally',
+  'modernamente': 'modernly',
+  'actualmente': 'currently',
+  'antiguamente': 'anciently',
+  'previamente': 'previously',
+  'posteriormente': 'subsequently',
+  'finalmente': 'finally',
+  'inicialmente': 'initially',
+  'originalmente': 'originally',
+  'eventualmente': 'eventually',
+  'periódicamente': 'periodically',
+  'temporalmente': 'temporarily',
+  'permanentemente': 'permanently',
+  'momentáneamente': 'momentarily',
+  'instantáneamente': 'instantly',
+  'inmediatamente': 'immediately',
+  'mediatamente': 'mediately',
+  'últimamente': 'lately',
+  'recientemente': 'recently',
+  'próximamente': 'soon',
+  'temprano': 'early',
+  'tarde': 'late',
+  'despierta': 'awaken',
+  'sentidos': 'senses',
+  'irresistible': 'irresistible',
+  'sabor': 'flavor',
+  'experiencia': 'experience',
+  'única': 'unique',
+  'transformará': 'will transform',
+  'mañanas': 'mornings',
+  'dos': 'two',
+  'pinos': 'pines',
+  'frío': 'cold',
+  'brew': 'brew',
+  'cold brew': 'cold brew',
+  'cold': 'cold',
+  'coffee': 'coffee',
+  'cappuccino': 'cappuccino',
+  'capuchino': 'cappuccino',
+  'capuccino': 'cappuccino',
 };
 
 export async function POST(request: NextRequest) {
@@ -253,46 +448,74 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
-    // Simple translation using the dictionary
-    if (from === 'es' && to === 'en') {
-      // Split the text into words and translate each word
-      const words = text.split(/\s+/);
-      const translatedWords = words.map((word: string) => {
-        // Remove punctuation for lookup
-        const cleanWord = word.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '');
-        // Use the translation if available, otherwise use the original word
-        return translations[cleanWord] || word;
-      });
+
+    // Function to clean text for lookup
+    const cleanText = (text: string) => text.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '');
+
+    // Function to find translation for a phrase
+    const findTranslation = (phrase: string, fromLang: string, toLang: string): string | null => {
+      const cleanPhrase = cleanText(phrase);
       
-      return NextResponse.json({ translatedText: translatedWords.join(' ') });
-    } else if (from === 'en' && to === 'es') {
-      // For English to Spanish, we'll do a reverse lookup
-      // This is not efficient but works for a small dictionary
-      const words = text.split(/\s+/);
-      const translatedWords = words.map((word: string) => {
-        // Remove punctuation for lookup
-        const cleanWord = word.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '');
-        
-        // Find the Spanish word that translates to this English word
+      if (fromLang === 'es' && toLang === 'en') {
+        return translations[cleanPhrase] || null;
+      } else if (fromLang === 'en' && toLang === 'es') {
         for (const [spanish, english] of Object.entries(translations)) {
-          if (english.toLowerCase() === cleanWord) {
+          if (cleanText(english) === cleanPhrase) {
             return spanish;
           }
         }
-        
-        // If no translation found, return the original word
-        return word;
-      });
+      }
+      return null;
+    };
+
+    // Split text into words but preserve phrases
+    const words = text.split(/\s+/);
+    let translatedWords: string[] = [];
+    
+    // Try to translate longer phrases first
+    for (let i = 0; i < words.length; i++) {
+      let translated = false;
       
-      return NextResponse.json({ translatedText: translatedWords.join(' ') });
-    } else {
-      // Unsupported language pair
-      return NextResponse.json(
-        { error: 'Unsupported language pair' },
-        { status: 400 }
-      );
+      // Try 3-word phrases
+      if (i + 2 < words.length) {
+        const threeWordPhrase = words.slice(i, i + 3).join(' ');
+        const translation = findTranslation(threeWordPhrase, from, to);
+        if (translation) {
+          translatedWords.push(translation);
+          i += 2;
+          translated = true;
+          continue;
+        }
+      }
+      
+      // Try 2-word phrases
+      if (i + 1 < words.length) {
+        const twoWordPhrase = words.slice(i, i + 2).join(' ');
+        const translation = findTranslation(twoWordPhrase, from, to);
+        if (translation) {
+          translatedWords.push(translation);
+          i += 1;
+          translated = true;
+          continue;
+        }
+      }
+      
+      // Try single words
+      if (!translated) {
+        const translation = findTranslation(words[i], from, to);
+        translatedWords.push(translation || words[i]);
+      }
     }
+    
+    // Join the translated words back together
+    const translatedText = translatedWords.join(' ');
+    
+    // Capitalize the first letter if the original text started with a capital
+    const finalText = text[0] === text[0].toUpperCase() 
+      ? translatedText.charAt(0).toUpperCase() + translatedText.slice(1)
+      : translatedText;
+    
+    return NextResponse.json({ translatedText: finalText });
   } catch (error) {
     console.error('Translation error:', error);
     return NextResponse.json(

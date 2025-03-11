@@ -4,6 +4,26 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { Product } from '@/types/product';
 
+// EAN validation function
+function isValidEAN(ean) {
+  // Basic format check (EAN-13, EAN-8, UPC-A, UPC-E)
+  if (!/^(\d{8}|\d{12,14})$/.test(ean)) {
+    return false;
+  }
+  
+  // For EAN-13, verify the check digit
+  if (ean.length === 13) {
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(ean[i]) * (i % 2 === 0 ? 1 : 3);
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    return parseInt(ean[12]) === checkDigit;
+  }
+  
+  return true; // Other formats pass basic length check
+}
+
 export async function GET(
   req,
   { params }
@@ -14,6 +34,13 @@ export async function GET(
     if (!ean || ean.length < 8) {
       return NextResponse.json({ 
         error: 'Invalid barcode. EAN must be at least 8 digits.' 
+      }, { status: 400 });
+    }
+
+    // Validate EAN format and check digit
+    if (!isValidEAN(ean)) {
+      return NextResponse.json({ 
+        error: 'Invalid barcode format or check digit' 
       }, { status: 400 });
     }
 

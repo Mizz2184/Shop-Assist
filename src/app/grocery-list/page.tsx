@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { Product } from '@/types/product';
 import { useAppContext } from '@/contexts/AppContext';
 import Link from 'next/link';
+import ShareList from '@/components/ShareList';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function GroceryList() {
   const [groceryList, setGroceryList] = useState<Product[]>([]);
@@ -13,6 +15,7 @@ export default function GroceryList() {
   const [error, setError] = useState<string | null>(null);
   const [translatedItems, setTranslatedItems] = useState<Record<string, any>>({});
   const [isRemoving, setIsRemoving] = useState(false);
+  const [listId] = useState(() => uuidv4());
   
   const router = useRouter();
   const { language, currency, exchangeRate, translate, setGroceryListCount } = useAppContext();
@@ -46,12 +49,6 @@ export default function GroceryList() {
   // Translate items when language changes
   useEffect(() => {
     const translateItems = async () => {
-      if (language === 'es') {
-        // No translation needed for Spanish (original language)
-        setTranslatedItems({});
-        return;
-      }
-      
       const translations: Record<string, any> = {};
       
       for (const product of groceryList) {
@@ -116,18 +113,19 @@ export default function GroceryList() {
 
   // Get translated text for a product
   const getTranslatedText = (product: Product, field: 'name' | 'brand' | 'description') => {
-    if (language === 'es' || !translatedItems[product.id]) {
+    if (!translatedItems[product.id]) {
       return product[field];
     }
     return translatedItems[product.id][field] || product[field];
   };
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold">
+    <div className="container mx-auto px-4 py-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">
           {language === 'es' ? 'Lista de Compras' : 'Grocery List'}
         </h1>
+        <ShareList listId={listId} />
       </div>
 
       {isLoading ? (
@@ -147,7 +145,7 @@ export default function GroceryList() {
           </p>
           <Link
             href="/"
-            className="btn mt-4 bg-white text-black border border-black hover:bg-gray-100"
+            className="btn mt-12 bg-white text-black border border-black hover:bg-gray-100 inline-block"
           >
             {language === 'es' ? 'Buscar Productos' : 'Search Products'}
           </Link>

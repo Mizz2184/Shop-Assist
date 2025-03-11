@@ -92,8 +92,8 @@ async function scrapeMaxiPali(query: string, category: string = '') {
   try {
     console.log(`Searching MaxiPali for: ${query} in category: ${category}`);
     
-    // Use a simpler approach with direct search URL, requesting 30 products
-    const searchUrl = `https://www.maxipali.co.cr/api/catalog_system/pub/products/search/${encodeURIComponent(query)}?map=ft&_from=0&_to=30`;
+    // Update the search URL to request 49 products
+    const searchUrl = `https://www.maxipali.co.cr/api/catalog_system/pub/products/search/${encodeURIComponent(query)}?map=ft&_from=0&_to=49`;
     
     // Add headers to mimic a browser request
     const headers = {

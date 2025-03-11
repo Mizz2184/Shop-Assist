@@ -37,22 +37,13 @@ export default function ProductSearch() {
     { id: 'pricesmart', name: 'PriceSmart' }
   ];
 
-  // Load initial products when the page loads
+  // Clear search state on component mount
   useEffect(() => {
-    // Default search terms based on language
-    const defaultSearchTerm = language === 'es' ? 'arroz' : 'rice';
-    
-    // Set the search query and perform the search
-    setSearchQuery(defaultSearchTerm);
-    
-    // Perform the search with a slight delay to ensure the UI is rendered first
-    const timer = setTimeout(() => {
-      performSearch(undefined, defaultSearchTerm);
-    }, 500);
-    
-    return () => clearTimeout(timer);
-  }, [language]);
-  
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchPerformed(false);
+  }, []);
+
   // Clear search bar when user leaves the page
   useEffect(() => {
     // Function to clear search state
@@ -60,11 +51,6 @@ export default function ProductSearch() {
       setSearchQuery('');
       setSearchResults([]);
       setSearchPerformed(false);
-    };
-    
-    // Add event listener for page navigation
-    const handleRouteChange = () => {
-      clearSearchState();
     };
     
     // Add event listener for page unload
@@ -181,7 +167,6 @@ export default function ProductSearch() {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={language === 'es' ? 'Ej: leche, arroz, café...' : 'E.g., milk, rice, coffee...'}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800"
-              required
             />
           </div>
           
@@ -246,111 +231,62 @@ export default function ProductSearch() {
       {/* API Source Notice */}
       {selectedStores.includes('maxipali') && (
         <div className="text-center mb-4 text-sm text-gray-500 dark:text-gray-400">
-          {language === 'es' 
+          {/* {language === 'es' 
             ? 'Los resultados de MaxiPali provienen directamente de su API oficial.' 
-            : 'MaxiPali results come directly from their official API.'}
+            : 'MaxiPali results come directly from their official API.'} */}
         </div>
       )}
       
-      {/* Error Message */}
-      {error && (
-        <div className="bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 p-4 rounded-lg mb-6 max-w-2xl mx-auto">
+      {/* Search Results or Initial State */}
+      {isLoading ? (
+        <div className="flex justify-center items-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      ) : error ? (
+        <div className="bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg mb-6 max-w-2xl mx-auto">
           {error}
         </div>
-      )}
-      
-      {/* Loading Spinner */}
-      {isLoading && (
-        <div className="flex justify-center items-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black dark:border-white"></div>
-        </div>
-      )}
-      
-      {/* Search Results */}
-      {!isLoading && searchResults.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {searchResults.map((product, index) => (
-            <ProductCard 
-              key={product.id} 
-              product={product} 
-              isPriority={index < 4}
-            />
-          ))}
-        </div>
-      )}
-      
-      {/* No Results Message */}
-      {!isLoading && searchPerformed && searchResults.length === 0 && !error && (
-        <div className="text-center py-10 max-w-2xl mx-auto">
-          <p className="text-xl text-gray-500 dark:text-gray-400 mb-4">
-            {language === 'es'
-              ? 'No se encontraron productos para esta búsqueda.'
-              : 'No products found for this search.'}
-          </p>
-          <div className="max-w-md mx-auto">
-            <h3 className="font-medium mb-2">
-              {language === 'es' ? 'Sugerencias:' : 'Suggestions:'}
-            </h3>
-            <ul className="text-left list-disc pl-6 text-gray-500 dark:text-gray-400">
-              <li>
-                {language === 'es'
-                  ? 'Intente con términos de búsqueda más generales (ej: "arroz" en lugar de "arroz integral")'
-                  : 'Try more general search terms (e.g., "rice" instead of "brown rice")'}
-              </li>
-              <li>
-                {language === 'es'
-                  ? 'Pruebe una categoría diferente'
-                  : 'Try a different category'}
-              </li>
-              <li>
-                {language === 'es'
-                  ? 'Revise si hay errores ortográficos en su búsqueda'
-                  : 'Check for spelling errors in your search'}
-              </li>
-              <li>
-                {language === 'es'
-                  ? 'Asegúrese de que ha seleccionado al menos una tienda'
-                  : 'Make sure you have selected at least one store'}
-              </li>
-              <li>
-                {language === 'es'
-                  ? 'Pruebe con un término en español (ej: "café" en lugar de "coffee")'
-                  : 'Try with a Spanish term (e.g., "café" instead of "coffee")'}
-              </li>
-            </ul>
-          </div>
-          <div className="mt-6">
-            <button
-              onClick={() => performSearch(undefined, language === 'es' ? 'arroz' : 'rice')}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-            >
-              {language === 'es' ? 'Buscar arroz' : 'Search for rice'}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* Initial State - No Search Performed Yet */}
-      {!isLoading && !searchPerformed && (
-        <div className="text-center py-10">
-          <div className="mb-6">
+      ) : !searchPerformed ? (
+        // Initial state - no search performed yet
+        <div className="flex flex-col items-center justify-center py-12">
+          <div className="w-48 h-48 mb-6">
             <Image 
               src="/images/search-illustration.svg" 
               alt="Search" 
               width={200} 
-              height={200}
-              className="mx-auto opacity-60"
-              onError={(e) => {
-                // Fallback if the image doesn't exist
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-              }}
+              height={200} 
+              className="dark:invert"
+              priority 
             />
           </div>
-          <p className="text-xl text-gray-500 dark:text-gray-400">
-            {language === 'es'
-              ? 'Ingrese un término de búsqueda para encontrar productos.'
-              : 'Enter a search term to find products.'}
+          <h2 className="text-xl font-semibold mb-2">
+            {language === 'es' ? 'Busca productos de tus tiendas favoritas' : 'Search for products from your favorite stores'}
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 text-center max-w-md">
+            {language === 'es' 
+              ? 'Ingresa un término de búsqueda arriba para encontrar productos de MaxiPali, Auto Mercado, Mas x Menos y PriceSmart.' 
+              : 'Enter a search term above to find products from MaxiPali, Auto Mercado, Mas x Menos, and PriceSmart.'}
+          </p>
+        </div>
+      ) : searchResults.length > 0 ? (
+        <>
+          <div className="text-center mb-6 text-gray-600 dark:text-gray-400">
+            {language === 'es' 
+              ? `Se encontraron ${searchResults.length} productos`
+              : `Found ${searchResults.length} products`}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {searchResults.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="text-center py-12">
+          <p className="text-lg">
+            {language === 'es' 
+              ? 'No se encontraron productos. Intente con otros términos de búsqueda.' 
+              : 'No products found. Try different search terms.'}
           </p>
         </div>
       )}

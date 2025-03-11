@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Product } from '@/types/product';
@@ -14,11 +14,44 @@ interface ProductCardProps {
 
 export default function ProductCard({ product, isPriority = false }: ProductCardProps) {
   const router = useRouter();
-  const { language, currency, exchangeRate } = useAppContext();
+  const { language, currency, exchangeRate, translate } = useAppContext();
   const { user } = useAuth();
   const [isAddingToList, setIsAddingToList] = useState(false);
   const [isAdded, setIsAdded] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [translatedText, setTranslatedText] = useState<{
+    name: string;
+    description: string;
+  }>({
+    name: product.name,
+    description: product.description || '',
+  });
+
+  // Translate product text when language changes
+  useEffect(() => {
+    const translateProduct = async () => {
+      try {
+        const [translatedName, translatedDescription] = await Promise.all([
+          translate(product.name),
+          translate(product.description || '')
+        ]);
+
+        setTranslatedText({
+          name: translatedName || product.name,
+          description: translatedDescription || product.description || ''
+        });
+      } catch (error) {
+        console.error('Error translating product:', error);
+        // Fallback to original text if translation fails
+        setTranslatedText({
+          name: product.name,
+          description: product.description || ''
+        });
+      }
+    };
+
+    translateProduct();
+  }, [language, product.name, product.description, translate]);
 
   const handleAddToList = async () => {
     if (!user) {
@@ -82,7 +115,7 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
       <div className="relative h-48 w-full bg-background-secondary">
         <Image
           src={product.imageUrl || 'https://placehold.co/400x400?text=No+Image'}
-          alt={product.name}
+          alt={translatedText.name}
           fill
           priority={isPriority}
           className="object-contain p-4"
@@ -100,7 +133,7 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
       <div className="p-4 flex flex-col flex-grow">
         <div className="mb-4 flex-grow">
           <h3 className="font-medium text-lg mb-2 line-clamp-2">
-            {product.name || 'Product Name Unavailable'}
+            {translatedText.name || 'Product Name Unavailable'}
           </h3>
           {product.brand && (
             <p className="text-text-secondary text-sm mb-2">
@@ -109,7 +142,7 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
           )}
           {product.description && (
             <p className="text-sm text-text-secondary line-clamp-3">
-              {product.description}
+              {translatedText.description}
             </p>
           )}
         </div>

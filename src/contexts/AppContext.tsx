@@ -115,8 +115,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   // Translation function using internal translation API
   const translate = async (text: string): Promise<string> => {
-    // If language is Spanish or text is empty/null, return the original text
-    if (language === 'es' || !text) return text || '';
+    // If text is empty/null, return the original text
+    if (!text) return text || '';
     
     try {
       // Get the base URL for API calls
@@ -130,8 +130,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         },
         body: JSON.stringify({
           text: text || '',
-          from: 'es',
-          to: 'en',
+          // When language is 'en', we want English text (so translate from Spanish)
+          // When language is 'es', we want Spanish text (so translate from English)
+          from: language === 'en' ? 'es' : 'en',
+          to: language,  // Always translate TO the current language
         }),
       });
       
