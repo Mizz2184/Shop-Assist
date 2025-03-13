@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BarcodeScanner } from 'react-barcode-scanner';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
@@ -49,26 +49,80 @@ export default function BarcodeScannerPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [scanAttempts, setScanAttempts] = useState(0);
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Log component mount and check camera permissions
+  useEffect(() => {
+    console.log('Barcode scanner component mounted');
+    
+    // Check if BarcodeDetector is available
+    if (typeof window !== 'undefined') {
+      if ('BarcodeDetector' in window) {
+        console.log('BarcodeDetector API is available');
+      } else {
+        console.log('BarcodeDetector API is not available, using polyfill');
+      }
+    }
+    
+    // Check camera permissions
+    const checkCameraPermission = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        console.log('Camera permission granted');
+        
+        // Stop the stream immediately, we just needed to check permissions
+        stream.getTracks().forEach(track => track.stop());
+        
+        setCameraReady(true);
+      } catch (err) {
+        console.error('Camera permission error:', err);
+        setError('Camera access denied. Please allow camera access to use the barcode scanner.');
+        setScanning(false);
+      }
+    };
+    
+    checkCameraPermission();
+    
+    return () => {
+      console.log('Barcode scanner component unmounted');
+    };
+  }, []);
 
   // Handle barcode detection
   const handleCapture = async (barcodes: any[]) => {
-    if (!barcodes || barcodes.length === 0 || loading) return;
+    console.log('handleCapture called with barcodes:', barcodes);
+    
+    if (!barcodes || barcodes.length === 0) {
+      console.log('No barcodes detected');
+      return;
+    }
+    
+    if (loading) {
+      console.log('Loading in progress, ignoring barcode');
+      return;
+    }
     
     try {
       // Get the first barcode
       const barcode = barcodes[0];
       const rawValue = barcode.rawValue;
       
-      // Skip if we've already scanned this code recently
-      if (lastScannedCode === rawValue) return;
+      console.log('Barcode detected:', rawValue, 'format:', barcode.format);
       
-      console.log('Barcode detected:', rawValue);
+      // Skip if we've already scanned this code recently
+      if (lastScannedCode === rawValue) {
+        console.log('Skipping duplicate barcode');
+        return;
+      }
+      
       setLastScannedCode(rawValue);
       setScanning(false);
       setLoading(true);
       setError(null);
       
       // Fetch product data from API
+      console.log('Fetching product data for barcode:', rawValue);
       const response = await axios.get(`/api/products/barcode/${rawValue}`);
       
       if (response.status === 200 && response.data) {
@@ -79,6 +133,7 @@ export default function BarcodeScannerPage() {
           description: `${response.data.name} has been scanned successfully.`,
         });
       } else {
+        console.log('No product found for barcode:', rawValue);
         setError('Product not found. Please try again.');
         setScanAttempts(prev => prev + 1);
       }
@@ -112,6 +167,7 @@ export default function BarcodeScannerPage() {
 
   // Reset scanner
   const handleReset = () => {
+    console.log('Resetting scanner');
     setScanning(true);
     setProduct(null);
     setError(null);
@@ -121,6 +177,7 @@ export default function BarcodeScannerPage() {
   // Add product to shopping list
   const handleAddToList = () => {
     if (product) {
+      console.log('Adding product to shopping list:', product.name);
       addItem(product);
       toast({
         title: 'Added to list',
@@ -132,12 +189,14 @@ export default function BarcodeScannerPage() {
 
   // Go back to home
   const handleBack = () => {
+    console.log('Navigating back to home');
     router.push('/');
   };
 
   // Auto-retry for known products after multiple failed attempts
   useEffect(() => {
     if (scanAttempts >= 2 && lastScannedCode === '7441029522686') {
+      console.log('Auto-retrying for Bimbo Cero Cero Blanco after multiple attempts');
       // This is the Bimbo Cero Cero Blanco product, let's use our hardcoded data
       setProduct({
         id: 'bimbo-cero-cero-blanco-550g',
@@ -159,6 +218,47 @@ export default function BarcodeScannerPage() {
     }
   }, [scanAttempts, lastScannedCode, toast]);
 
+  // Handle manual test scan (for debugging)
+  const handleTestScan = () => {
+    console.log('Testing with Bimbo Cero Cero Blanco EAN');
+    const testEan = '7441029522686';
+    setLastScannedCode(testEan);
+    setScanning(false);
+    setLoading(true);
+    
+    axios.get(`/api/products/barcode/${testEan}`)
+      .then(response => {
+        if (response.status === 200 && response.data) {
+          setProduct(response.data);
+          toast({
+            title: 'Test product found!',
+            description: `${response.data.name} has been loaded for testing.`,
+          });
+        }
+      })
+      .catch(err => {
+        console.error('Test scan error:', err);
+        setError('Test scan failed. Using fallback data.');
+        
+        // Use fallback data
+        setProduct({
+          id: 'bimbo-cero-cero-blanco-550g',
+          name: 'Pan cuadrado Bimbo blanco cero - 550 g',
+          brand: 'BIMBO',
+          description: 'Pan blanco sin azúcar añadida',
+          price: 2100,
+          imageUrl: 'https://bodegacr.vtexassets.com/arquivos/ids/284077/Lentejas-Bolsa-Sabemas-400gr-2-31296.jpg',
+          store: 'MaxiPali',
+          url: 'https://www.maxipali.co.cr/pan-cuadrado-bimbo-blanco-cero-550-g/p',
+          category: 'abarrotes',
+          ean: '7441029522686'
+        });
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col items-center justify-center">
@@ -167,22 +267,35 @@ export default function BarcodeScannerPage() {
         {scanning ? (
           <div className="w-full max-w-md">
             <div className="relative aspect-square w-full overflow-hidden rounded-lg border-2 border-dashed border-gray-300 mb-4">
-              <BarcodeScanner
-                onCapture={handleCapture}
-                options={{
-                  formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'databar', 'databar_expanded', 'itf', 'qr_code']
-                }}
-              />
+              {cameraReady ? (
+                <BarcodeScanner
+                  onCapture={handleCapture}
+                  options={{
+                    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'itf', 'qr_code']
+                  }}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                  <p className="text-gray-500">Waiting for camera access...</p>
+                </div>
+              )}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-3/4 h-1 bg-red-500 opacity-50"></div>
               </div>
             </div>
             <p className="text-center text-gray-500 mb-4">
-              Position the barcode within the scanner view
+              {cameraReady 
+                ? "Position the barcode within the scanner view" 
+                : "Waiting for camera access..."}
             </p>
-            <Button onClick={handleBack} variant="outline" className="w-full">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button onClick={handleBack} variant="outline" className="w-full">
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+              </Button>
+              <Button onClick={handleTestScan} variant="secondary" className="w-full">
+                Test with Sample Product
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="w-full max-w-md">
