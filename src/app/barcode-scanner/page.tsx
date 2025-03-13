@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BarcodeScanner } from 'react-barcode-scanner';
+import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { Product } from '@/types/product';
@@ -9,18 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Image from 'next/image';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
-import { useToast, toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 // Simple Skeleton component
 const Skeleton = ({ className }: { className?: string }) => (
   <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
 );
-
-// Polyfill for browsers that don't support the Barcode Detection API
-if (typeof window !== 'undefined' && !('BarcodeDetector' in window)) {
-  console.log('BarcodeDetector not available, using fallback');
-  // The library will handle the polyfill internally
-}
 
 // Simple shopping list hook implementation
 const useShoppingList = () => {
@@ -51,65 +45,69 @@ export default function BarcodeScannerPage() {
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
 
-  // Log component mount and check camera permissions
   useEffect(() => {
-    console.log('Barcode scanner component mounted');
+    console.log('Initializing barcode scanner...');
     
-    // Check if BarcodeDetector is available
-    if (typeof window !== 'undefined') {
-      if ('BarcodeDetector' in window) {
-        console.log('BarcodeDetector API is available');
-      } else {
-        console.log('BarcodeDetector API is not available, using polyfill');
-      }
-    }
-    
-    // Check camera permissions
-    const checkCameraPermission = async () => {
+    const initializeScanner = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        console.log('Camera permission granted');
-        
-        // Stop the stream immediately, we just needed to check permissions
-        stream.getTracks().forEach(track => track.stop());
-        
+        // Check camera permissions
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         setCameraReady(true);
+        
+        // Initialize ZXing reader
+        const reader = new BrowserMultiFormatReader();
+        
+        if (videoRef.current) {
+          console.log('Starting continuous decode from camera...');
+          const controls = await reader.decodeFromVideoDevice(
+            undefined, 
+            videoRef.current, 
+            (result, err) => {
+              if (result) {
+                console.log('Barcode detected:', result.getText());
+                handleCapture(result.getText());
+              }
+              if (err && !(err instanceof TypeError)) {
+                // TypeError is thrown when scanning is stopped, we can ignore it
+                console.error('Scanning error:', err);
+              }
+            }
+          );
+          controlsRef.current = controls;
+        }
       } catch (err) {
-        console.error('Camera permission error:', err);
+        console.error('Camera initialization error:', err);
         setError('Camera access denied. Please allow camera access to use the barcode scanner.');
         setScanning(false);
       }
     };
-    
-    checkCameraPermission();
-    
+
+    if (scanning) {
+      initializeScanner();
+    }
+
+    // Cleanup
     return () => {
-      console.log('Barcode scanner component unmounted');
+      if (controlsRef.current) {
+        console.log('Cleaning up scanner...');
+        controlsRef.current.stop();
+        controlsRef.current = null;
+      }
     };
-  }, []);
+  }, [scanning]);
 
   // Handle barcode detection
-  const handleCapture = async (barcodes: any[]) => {
-    console.log('handleCapture called with barcodes:', barcodes);
+  const handleCapture = async (rawValue: string) => {
+    console.log('handleCapture called with barcode:', rawValue);
     
-    if (!barcodes || barcodes.length === 0) {
-      console.log('No barcodes detected');
-      return;
-    }
-    
-    if (loading) {
-      console.log('Loading in progress, ignoring barcode');
+    if (loading || !scanning) {
+      console.log('Loading in progress or not scanning, ignoring barcode');
       return;
     }
     
     try {
-      // Get the first barcode
-      const barcode = barcodes[0];
-      const rawValue = barcode.rawValue;
-      
-      console.log('Barcode detected:', rawValue, 'format:', barcode.format);
-      
       // Skip if we've already scanned this code recently
       if (lastScannedCode === rawValue) {
         console.log('Skipping duplicate barcode');
@@ -120,6 +118,11 @@ export default function BarcodeScannerPage() {
       setScanning(false);
       setLoading(true);
       setError(null);
+      
+      // Stop the scanner
+      if (controlsRef.current) {
+        controlsRef.current.stop();
+      }
       
       // Fetch product data from API
       console.log('Fetching product data for barcode:', rawValue);
@@ -143,10 +146,9 @@ export default function BarcodeScannerPage() {
       setScanAttempts(prev => prev + 1);
       
       // Special handling for Bimbo Cero Cero Blanco
-      if (lastScannedCode === '7441029522686') {
+      if (rawValue === '7441029522686') {
         console.log('Detected Bimbo Cero Cero Blanco EAN, retrying with direct lookup...');
         try {
-          // Force a refresh of the API call
           const retryResponse = await axios.get(`/api/products/barcode/7441029522686?retry=true`);
           if (retryResponse.status === 200 && retryResponse.data) {
             setProduct(retryResponse.data);
@@ -193,70 +195,10 @@ export default function BarcodeScannerPage() {
     router.push('/');
   };
 
-  // Auto-retry for known products after multiple failed attempts
-  useEffect(() => {
-    if (scanAttempts >= 2 && lastScannedCode === '7441029522686') {
-      console.log('Auto-retrying for Bimbo Cero Cero Blanco after multiple attempts');
-      // This is the Bimbo Cero Cero Blanco product, let's use our hardcoded data
-      setProduct({
-        id: 'bimbo-cero-cero-blanco-550g',
-        name: 'Pan cuadrado Bimbo blanco cero - 550 g',
-        brand: 'BIMBO',
-        description: 'Pan blanco sin azúcar añadida',
-        price: 2100,
-        imageUrl: 'https://bodegacr.vtexassets.com/arquivos/ids/284077/Lentejas-Bolsa-Sabemas-400gr-2-31296.jpg',
-        store: 'MaxiPali',
-        url: 'https://www.maxipali.co.cr/pan-cuadrado-bimbo-blanco-cero-550-g/p',
-        category: 'abarrotes',
-        ean: '7441029522686'
-      });
-      setError(null);
-      toast({
-        title: 'Product found!',
-        description: 'Pan cuadrado Bimbo blanco cero - 550 g has been identified.',
-      });
-    }
-  }, [scanAttempts, lastScannedCode, toast]);
-
   // Handle manual test scan (for debugging)
   const handleTestScan = () => {
     console.log('Testing with Bimbo Cero Cero Blanco EAN');
-    const testEan = '7441029522686';
-    setLastScannedCode(testEan);
-    setScanning(false);
-    setLoading(true);
-    
-    axios.get(`/api/products/barcode/${testEan}`)
-      .then(response => {
-        if (response.status === 200 && response.data) {
-          setProduct(response.data);
-          toast({
-            title: 'Test product found!',
-            description: `${response.data.name} has been loaded for testing.`,
-          });
-        }
-      })
-      .catch(err => {
-        console.error('Test scan error:', err);
-        setError('Test scan failed. Using fallback data.');
-        
-        // Use fallback data
-        setProduct({
-          id: 'bimbo-cero-cero-blanco-550g',
-          name: 'Pan cuadrado Bimbo blanco cero - 550 g',
-          brand: 'BIMBO',
-          description: 'Pan blanco sin azúcar añadida',
-          price: 2100,
-          imageUrl: 'https://bodegacr.vtexassets.com/arquivos/ids/284077/Lentejas-Bolsa-Sabemas-400gr-2-31296.jpg',
-          store: 'MaxiPali',
-          url: 'https://www.maxipali.co.cr/pan-cuadrado-bimbo-blanco-cero-550-g/p',
-          category: 'abarrotes',
-          ean: '7441029522686'
-        });
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    handleCapture('7441029522686');
   };
 
   return (
@@ -268,11 +210,9 @@ export default function BarcodeScannerPage() {
           <div className="w-full max-w-md">
             <div className="relative aspect-square w-full overflow-hidden rounded-lg border-2 border-dashed border-gray-300 mb-4">
               {cameraReady ? (
-                <BarcodeScanner
-                  onCapture={handleCapture}
-                  options={{
-                    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'itf', 'qr_code']
-                  }}
+                <video
+                  ref={videoRef}
+                  className="absolute inset-0 h-full w-full object-cover"
                 />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
