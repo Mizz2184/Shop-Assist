@@ -134,6 +134,11 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
         <div className="mb-4 flex-grow">
           <h3 className="font-medium text-lg mb-2 line-clamp-2">
             {translatedText.name || 'Product Name Unavailable'}
+            {product.translatedName && (
+              <span className="block text-sm text-text-secondary mt-1">
+                {product.translatedName}
+              </span>
+            )}
           </h3>
           {product.brand && (
             <p className="text-text-secondary text-sm mb-2">

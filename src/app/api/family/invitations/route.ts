@@ -35,28 +35,14 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Log authentication method
+    // Try to get the authorization header first
     const authHeader = request.headers.get('Authorization');
-    console.log('Auth header present:', !!authHeader);
-    
-    // Create a Supabase client using cookies
-    const cookieSupabase = createRouteHandlerClient({ cookies });
-    
-    // Try to get user from cookies first
-    let { data: { user: cookieUser }, error: cookieUserError } = await cookieSupabase.auth.getUser();
-    console.log('Cookie auth result:', { userFound: !!cookieUser, errorOccurred: !!cookieUserError });
-    
-    // Try to get user from Authorization header if cookie auth failed
-    let tokenUser = null;
-    let tokenUserError = null;
-    let tokenSupabase = null;
-    
+    let supabase;
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Use token-based auth if header is present
       const token = authHeader.split(' ')[1];
-      console.log('Attempting token authentication with token:', token.substring(0, 10) + '...');
-      
-      // Create a new Supabase client with the user's token
-      tokenSupabase = createClient(
+      supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
@@ -64,38 +50,24 @@ export async function POST(request: NextRequest) {
             headers: {
               Authorization: `Bearer ${token}`
             }
+          },
+          auth: {
+            persistSession: false
           }
         }
       );
-      
-      const tokenUserResult = await tokenSupabase.auth.getUser();
-      tokenUser = tokenUserResult.data.user;
-      tokenUserError = tokenUserResult.error;
-      
-      console.log('Token auth result:', { 
-        userFound: !!tokenUser, 
-        errorOccurred: !!tokenUserError,
-        errorMessage: tokenUserError?.message
-      });
+    } else {
+      // Fall back to cookie-based auth
+      supabase = createRouteHandlerClient({ cookies });
     }
     
-    // Determine which authentication method succeeded
-    let user = cookieUser || tokenUser;
-    let authError = cookieUserError || tokenUserError;
-    let supabase = user === cookieUser ? cookieSupabase : (tokenSupabase || cookieSupabase);
+    // Get the current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
     
-    if (authError) {
-      console.error('Auth error:', authError);
+    if (userError || !user) {
+      console.error('Auth error:', userError);
       return NextResponse.json(
-        { error: `Authentication error: ${authError.message}` },
-        { status: 401 }
-      );
-    }
-    
-    if (!user) {
-      console.error('No authenticated user found');
-      return NextResponse.json(
-        { error: 'User not authenticated. Please log in and try again.' },
+        { error: 'Authentication error: ' + (userError?.message || 'Auth session missing!') },
         { status: 401 }
       );
     }
@@ -113,7 +85,7 @@ export async function POST(request: NextRequest) {
     if (membershipError) {
       console.error('Membership error:', membershipError);
       return NextResponse.json(
-        { error: `Failed to check membership: ${membershipError.message}` },
+        { error: 'Failed to verify family membership' },
         { status: 500 }
       );
     }
@@ -469,9 +441,36 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Try to get the authorization header first
+    const authHeader = request.headers.get('Authorization');
+    let supabase;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Use token-based auth if header is present
+      const token = authHeader.split(' ')[1];
+      supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          global: {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          },
+          auth: {
+            persistSession: false
+          }
+        }
+      );
+    } else {
+      // Fall back to cookie-based auth
+      supabase = createRouteHandlerClient({ cookies });
+    }
+
     // Get the current user's ID
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
+      console.error('Auth error:', userError);
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -481,13 +480,21 @@ export async function DELETE(request: NextRequest) {
     // Get the invitation and check if user is admin of the family group
     const { data: invitation, error: inviteError } = await supabase
       .from('family_invitations')
-      .select('family_id')
+      .select('*, family:family_id(id)')
       .eq('id', invitationId)
       .single();
 
-    if (inviteError || !invitation) {
+    if (inviteError) {
+      console.error('Error fetching invitation:', inviteError);
       return NextResponse.json(
-        { error: 'Invalid invitation' },
+        { error: 'Failed to fetch invitation' },
+        { status: 500 }
+      );
+    }
+
+    if (!invitation) {
+      return NextResponse.json(
+        { error: 'Invitation not found' },
         { status: 404 }
       );
     }
@@ -500,9 +507,17 @@ export async function DELETE(request: NextRequest) {
       .eq('user_id', user.id)
       .single();
 
-    if (memberError || !member || member.role !== 'admin') {
+    if (memberError) {
+      console.error('Error checking member role:', memberError);
       return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
+        { error: 'Failed to verify permissions' },
+        { status: 500 }
+      );
+    }
+
+    if (!member || member.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Only family admins can cancel invitations' },
         { status: 403 }
       );
     }

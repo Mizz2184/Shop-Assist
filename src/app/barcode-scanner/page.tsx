@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
+import { BarcodeFormat } from '@zxing/library';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { Product } from '@/types/product';
@@ -12,8 +13,12 @@ import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Simple Skeleton component
-const Skeleton = ({ className }: { className?: string }) => (
-  <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
+const Skeleton = ({ className, isInline = false }: { className?: string; isInline?: boolean }) => (
+  isInline ? (
+    <span className={`animate-pulse bg-gray-200 rounded inline-block ${className}`} />
+  ) : (
+    <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
+  )
 );
 
 // Simple shopping list hook implementation
@@ -52,34 +57,72 @@ export default function BarcodeScannerPage() {
     
     const initializeScanner = async () => {
       try {
-        // Check camera permissions
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        // Configure video constraints for better performance
+        const constraints = {
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 1.7777777778 },
+            frameRate: { ideal: 30 },
+            focusMode: 'continuous'
+          }
+        };
+        
+        // Request camera access with specific constraints
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         setCameraReady(true);
         
-        // Initialize ZXing reader
+        // Initialize ZXing reader with default configuration
         const reader = new BrowserMultiFormatReader();
         
         if (videoRef.current) {
           console.log('Starting continuous decode from camera...');
+          
+          // Apply the stream directly to the video element for better control
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          
           const controls = await reader.decodeFromVideoDevice(
             undefined, 
             videoRef.current, 
             (result, err) => {
               if (result) {
-                console.log('Barcode detected:', result.getText());
+                console.log('Barcode detected:', result.getText(), 'Format:', result.getBarcodeFormat());
                 handleCapture(result.getText());
               }
               if (err && !(err instanceof TypeError)) {
-                // TypeError is thrown when scanning is stopped, we can ignore it
-                console.error('Scanning error:', err);
+                // Log scanning errors but don't show to user unless persistent
+                console.debug('Scanning error:', err);
+                
+                // Only update UI for persistent errors
+                if (err.name !== 'NotFoundException') {
+                  setError('Error scanning barcode. Please try again or adjust the camera position.');
+                }
               }
             }
           );
           controlsRef.current = controls;
+          
+          // Add video event listeners for better error handling
+          videoRef.current.addEventListener('loadedmetadata', () => {
+            console.log('Video metadata loaded');
+          });
+          
+          videoRef.current.addEventListener('error', (e) => {
+            console.error('Video error:', e);
+            setError('Camera error. Please try reloading the page.');
+          });
         }
       } catch (err) {
         console.error('Camera initialization error:', err);
-        setError('Camera access denied. Please allow camera access to use the barcode scanner.');
+        if (err instanceof DOMException && err.name === 'NotAllowedError') {
+          setError('Camera access denied. Please allow camera access in your browser settings.');
+        } else if (err instanceof DOMException && err.name === 'NotFoundError') {
+          setError('No camera found. Please ensure your device has a camera.');
+        } else {
+          setError('Failed to initialize camera. Please try reloading the page.');
+        }
         setScanning(false);
       }
     };
@@ -94,6 +137,13 @@ export default function BarcodeScannerPage() {
         console.log('Cleaning up scanner...');
         controlsRef.current.stop();
         controlsRef.current = null;
+      }
+      
+      // Clean up video stream
+      if (videoRef.current && videoRef.current.srcObject) {
+        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+        tracks.forEach(track => track.stop());
+        videoRef.current.srcObject = null;
       }
     };
   }, [scanning]);
@@ -246,7 +296,7 @@ export default function BarcodeScannerPage() {
                     <Skeleton className="h-4 w-3/4" />
                   </CardTitle>
                   <CardDescription>
-                    <Skeleton className="h-4 w-1/2" />
+                    <Skeleton className="h-4 w-1/2" isInline />
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

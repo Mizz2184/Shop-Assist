@@ -1,6 +1,7 @@
 export interface Product {
   id: string;
   name: string;
+  translatedName?: string; // Name in the other language (English/Spanish)
   brand: string;
   description: string;
   price: number;

@@ -248,46 +248,42 @@ export default function ProductSearch() {
         </div>
       ) : !searchPerformed ? (
         // Initial state - no search performed yet
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="w-48 h-48 mb-6">
-            <Image 
-              src="/images/search-illustration.svg" 
-              alt="Search" 
-              width={200} 
-              height={200} 
-              className="dark:invert"
-              priority 
-            />
-          </div>
-          <h2 className="text-xl font-semibold mb-2">
-            {language === 'es' ? 'Busca productos de tus tiendas favoritas' : 'Search for products from your favorite stores'}
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400 text-center max-w-md">
+        <div className="text-center py-20">
+          <p className="text-lg text-gray-500 dark:text-gray-400">
             {language === 'es' 
-              ? 'Ingresa un término de búsqueda arriba para encontrar productos de MaxiPali, Auto Mercado, Mas x Menos y PriceSmart.' 
-              : 'Enter a search term above to find products from MaxiPali, Auto Mercado, Mas x Menos, and PriceSmart.'}
+              ? 'Busca productos por nombre en español o inglés'
+              : 'Search for products by name in English or Spanish'}
+          </p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+            {language === 'es'
+              ? 'Ejemplo: "arroz" o "rice"'
+              : 'Example: "rice" or "arroz"'}
           </p>
         </div>
-      ) : searchResults.length > 0 ? (
-        <>
-          <div className="text-center mb-6 text-gray-600 dark:text-gray-400">
-            {language === 'es' 
-              ? `Se encontraron ${searchResults.length} productos`
-              : `Found ${searchResults.length} products`}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {searchResults.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="text-center py-12">
-          <p className="text-lg">
-            {language === 'es' 
-              ? 'No se encontraron productos. Intente con otros términos de búsqueda.' 
-              : 'No products found. Try different search terms.'}
+      ) : searchResults.length === 0 ? (
+        // No results found
+        <div className="text-center py-20">
+          <p className="text-lg text-gray-500 dark:text-gray-400">
+            {language === 'es'
+              ? 'No se encontraron productos'
+              : 'No products found'}
           </p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+            {language === 'es'
+              ? 'Intenta con otros términos de búsqueda en español o inglés'
+              : 'Try different search terms in English or Spanish'}
+          </p>
+        </div>
+      ) : (
+        // Display search results
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {searchResults.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              isPriority={index < 4} // Prioritize loading first 4 images
+            />
+          ))}
         </div>
       )}
     </div>

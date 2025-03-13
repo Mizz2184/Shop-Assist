@@ -236,20 +236,16 @@ export const useFamily = (initialFamilyId?: string) => {
   ) => {
     try {
       if (!session) {
-        toast.error('You must be logged in to create an invitation');
-        return null;
+        throw new Error('You must be logged in to create invitations');
       }
 
-      if (!session.access_token) {
-        console.error('No access token available in session');
-        toast.error('Authentication error: No access token available');
-        return null;
-      }
+      console.log('Creating invitation with session:', {
+        hasAccessToken: !!session.access_token,
+        email,
+        role
+      });
 
-      console.log('Creating invitation for:', email, 'with role:', role);
-      
-      // First try with the session token
-      let response = await fetch('/api/family/invitations', {
+      const response = await fetch('/api/family/invitations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -258,18 +254,6 @@ export const useFamily = (initialFamilyId?: string) => {
         body: JSON.stringify({ familyId, email, role })
       });
       
-      // If unauthorized, try without the token (relying on cookies)
-      if (response.status === 401) {
-        console.log('Token authentication failed, trying with cookies...');
-        response = await fetch('/api/family/invitations', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ familyId, email, role })
-        });
-      }
-      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         console.error('Failed to create invitation:', {
@@ -277,7 +261,17 @@ export const useFamily = (initialFamilyId?: string) => {
           statusText: response.statusText,
           data: errorData
         });
-        throw new Error(errorData.error || `Failed to create invitation: ${response.status} ${response.statusText}`);
+        
+        // Handle specific error cases
+        if (response.status === 401) {
+          throw new Error('Your session has expired. Please log in again.');
+        } else if (response.status === 403) {
+          throw new Error('You do not have permission to send invitations in this family group.');
+        } else if (response.status === 400 && errorData.error) {
+          throw new Error(errorData.error);
+        } else {
+          throw new Error(`Failed to create invitation: ${errorData.error || response.statusText}`);
+        }
       }
       
       const data = await response.json();
@@ -314,21 +308,45 @@ export const useFamily = (initialFamilyId?: string) => {
   // Cancel invitation
   const cancelInvitation = useCallback(async (invitationId: string) => {
     try {
+      if (!session) {
+        throw new Error('You must be logged in to cancel invitations');
+      }
+
       const response = await fetch(`/api/family/invitations?id=${invitationId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         }
       });
-      if (!response.ok) throw new Error('Failed to cancel invitation');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        console.error('Cancel invitation error:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: errorData
+        });
+        
+        // Handle specific error cases
+        if (response.status === 401) {
+          throw new Error('Your session has expired. Please log in again.');
+        } else if (response.status === 403) {
+          throw new Error('You do not have permission to cancel this invitation.');
+        } else if (response.status === 404) {
+          throw new Error('Invitation not found.');
+        } else {
+          throw new Error(errorData.error || 'Failed to cancel invitation');
+        }
+      }
+
       setInvitations((prev) =>
         prev.filter((invitation) => invitation.id !== invitationId)
       );
       toast.success('Invitation cancelled successfully');
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error cancelling invitation:', error);
-      toast.error('Failed to cancel invitation');
+      toast.error(error.message || 'Failed to cancel invitation');
       return false;
     }
   }, [session]);

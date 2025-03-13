@@ -3,6 +3,8 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
 import { Product } from '@/types/product';
+// Remove the unused import
+// import { TranslationServiceClient } from '@google-cloud/translate';
 // Remove Supabase import if not needed
 // import { createClient } from '@supabase/supabase-js';
 
@@ -11,14 +13,152 @@ import { Product } from '@/types/product';
 // const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 // const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
+// Initialize Google Cloud Translation
+// const translate = new Translate({
+//   projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+//   key: process.env.GOOGLE_CLOUD_API_KEY
+// });
+
 // Function to translate text between languages
 async function translateText(text: string, from: string, to: string): Promise<string> {
   try {
     if (!text.trim()) return text;
     
-    // For now, just return the original text since we're not using translation
-    // This can be replaced with a proper translation service later
-    return text;
+    // For now, let's use a simple dictionary-based translation for common food terms
+    // This avoids the complexity of setting up Google Cloud Translation
+    const translations: Record<string, Record<string, string>> = {
+      en: {
+        'rice': 'arroz',
+        'milk': 'leche',
+        'bread': 'pan',
+        'water': 'agua',
+        'coffee': 'café',
+        'sugar': 'azúcar',
+        'salt': 'sal',
+        'chicken': 'pollo',
+        'beef': 'carne de res',
+        'fish': 'pescado',
+        'fruit': 'fruta',
+        'apple': 'manzana',
+        'banana': 'banano',
+        'orange': 'naranja',
+        'potato': 'papa',
+        'tomato': 'tomate',
+        'onion': 'cebolla',
+        'cheese': 'queso',
+        'egg': 'huevo',
+        'beans': 'frijoles',
+        'corn': 'maíz',
+        'flour': 'harina',
+        'oil': 'aceite',
+        'butter': 'mantequilla',
+        'pasta': 'pasta',
+        'cereal': 'cereal',
+        'yogurt': 'yogur',
+        'juice': 'jugo',
+        'soda': 'refresco',
+        'beer': 'cerveza',
+        'wine': 'vino',
+        'meat': 'carne',
+        'vegetable': 'vegetal',
+        'cookie': 'galleta',
+        'cake': 'pastel',
+        'chocolate': 'chocolate',
+        'candy': 'dulce',
+        'ice cream': 'helado',
+        'soup': 'sopa',
+        'sauce': 'salsa',
+        'spice': 'especia',
+        'herb': 'hierba',
+        'tea': 'té',
+        'honey': 'miel',
+        'jam': 'mermelada',
+        'peanut butter': 'mantequilla de maní',
+        'tortilla': 'tortilla',
+        'chip': 'chip',
+        'snack': 'bocadillo',
+        'frozen': 'congelado',
+        'canned': 'enlatado',
+        'fresh': 'fresco',
+        'organic': 'orgánico',
+        'gluten-free': 'sin gluten',
+        'dairy-free': 'sin lácteos',
+        'vegan': 'vegano',
+        'vegetarian': 'vegetariano'
+      },
+      es: {
+        'arroz': 'rice',
+        'leche': 'milk',
+        'pan': 'bread',
+        'agua': 'water',
+        'café': 'coffee',
+        'azúcar': 'sugar',
+        'sal': 'salt',
+        'pollo': 'chicken',
+        'carne de res': 'beef',
+        'pescado': 'fish',
+        'fruta': 'fruit',
+        'manzana': 'apple',
+        'banano': 'banana',
+        'naranja': 'orange',
+        'papa': 'potato',
+        'tomate': 'tomato',
+        'cebolla': 'onion',
+        'queso': 'cheese',
+        'huevo': 'egg',
+        'frijoles': 'beans',
+        'maíz': 'corn',
+        'harina': 'flour',
+        'aceite': 'oil',
+        'mantequilla': 'butter',
+        'pasta': 'pasta',
+        'cereal': 'cereal',
+        'yogur': 'yogurt',
+        'jugo': 'juice',
+        'refresco': 'soda',
+        'cerveza': 'beer',
+        'vino': 'wine',
+        'carne': 'meat',
+        'vegetal': 'vegetable',
+        'galleta': 'cookie',
+        'pastel': 'cake',
+        'chocolate': 'chocolate',
+        'dulce': 'candy',
+        'helado': 'ice cream',
+        'sopa': 'soup',
+        'salsa': 'sauce',
+        'especia': 'spice',
+        'hierba': 'herb',
+        'té': 'tea',
+        'miel': 'honey',
+        'mermelada': 'jam',
+        'mantequilla de maní': 'peanut butter',
+        'tortilla': 'tortilla',
+        'chip': 'chip',
+        'bocadillo': 'snack',
+        'congelado': 'frozen',
+        'enlatado': 'canned',
+        'fresco': 'fresh',
+        'orgánico': 'organic',
+        'sin gluten': 'gluten-free',
+        'sin lácteos': 'dairy-free',
+        'vegano': 'vegan',
+        'vegetariano': 'vegetarian'
+      }
+    };
+    
+    // Simple word-by-word translation
+    const sourceLanguage = from === 'en' ? 'en' : 'es';
+    const targetLanguage = to === 'en' ? 'en' : 'es';
+    
+    // Split the text into words and translate each one
+    const words = text.toLowerCase().split(/\s+/);
+    const translatedWords = words.map(word => {
+      const dictionary = translations[sourceLanguage];
+      return dictionary[word] || word;
+    });
+    
+    return translatedWords.join(' ');
   } catch (error) {
     console.error('Translation error:', error);
     return text; // Return original text if translation fails
@@ -30,7 +170,7 @@ export async function GET(request: NextRequest) {
     // Get search parameters
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('query') || '';
-    const stores = searchParams.get('stores')?.split(',') || ['maxipali']; // Default to MaxiPali if not specified
+    const stores = searchParams.get('stores')?.split(',') || ['maxipali'];
     const language = searchParams.get('language') || 'en';
     const category = searchParams.get('category') || '';
 
@@ -41,31 +181,50 @@ export async function GET(request: NextRequest) {
 
     console.log(`Searching for "${query}" in stores: ${stores.join(', ')}`);
 
+    // Translate query to both languages
+    let spanishQuery = query;
+    let englishQuery = query;
+
+    if (language === 'en') {
+      spanishQuery = await translateText(query, 'en', 'es');
+    } else {
+      englishQuery = await translateText(query, 'es', 'en');
+    }
+
+    console.log(`Search queries - English: "${englishQuery}", Spanish: "${spanishQuery}"`);
+
     // Array to store all products
     let allProducts: Product[] = [];
 
-    // Search in each selected store
+    // Search in each selected store with both queries
     for (const store of stores) {
       console.log(`Searching in ${store.charAt(0).toUpperCase() + store.slice(1)}...`);
       
       let storeProducts: Product[] = [];
       
-      switch (store.toLowerCase()) {
-        case 'maxipali':
-          storeProducts = await scrapeMaxiPali(query, category);
-          break;
-        case 'automercado':
-          storeProducts = await scrapeAutomercado(query, category);
-          break;
-        case 'masxmenos':
-          storeProducts = await scrapeMasXMenos(query, category);
-          break;
-        case 'pricesmart':
-          storeProducts = await scrapePriceSmart(query, category);
-          break;
-        default:
-          console.log(`Unknown store: ${store}`);
-      }
+      // Search with Spanish query
+      const spanishProducts = await searchStore(store, spanishQuery, category);
+      
+      // Search with English query
+      const englishProducts = await searchStore(store, englishQuery, category);
+      
+      // Merge results, removing duplicates based on product ID
+      storeProducts = [...spanishProducts, ...englishProducts]
+        .filter((product, index, self) => 
+          index === self.findIndex((p) => p.id === product.id)
+        );
+      
+      // Add translated names to products
+      storeProducts = await Promise.all(storeProducts.map(async (product) => {
+        const translatedName = language === 'en' 
+          ? await translateText(product.name, 'es', 'en')
+          : await translateText(product.name, 'en', 'es');
+        
+        return {
+          ...product,
+          translatedName
+        };
+      }));
       
       console.log(`Found ${storeProducts.length} products from ${store}`);
       allProducts = [...allProducts, ...storeProducts];
@@ -85,6 +244,23 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Search API error:', error);
     return NextResponse.json([], { status: 500 });
+  }
+}
+
+// Helper function to search in a specific store
+async function searchStore(store: string, query: string, category: string): Promise<Product[]> {
+  switch (store.toLowerCase()) {
+    case 'maxipali':
+      return await scrapeMaxiPali(query, category);
+    case 'automercado':
+      return await scrapeAutomercado(query, category);
+    case 'masxmenos':
+      return await scrapeMasXMenos(query, category);
+    case 'pricesmart':
+      return await scrapePriceSmart(query, category);
+    default:
+      console.log(`Unknown store: ${store}`);
+      return [];
   }
 }
 
