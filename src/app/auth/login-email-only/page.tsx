@@ -1,19 +1,44 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAppContext } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
+import AuthRedirect from '@/components/auth/AuthRedirect';
 
-export default function LoginEmailOnly() {
+// Loading component to show while the main component is loading
+function LoginLoading() {
+  return (
+    <div className="min-h-screen p-4 md:p-8 flex items-center justify-center">
+      <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
+        <p className="mt-4">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+// Main login component
+function LoginEmailOnlyContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingInvitation, setPendingInvitation] = useState<string | null>(null);
   
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { language } = useAppContext();
+  const redirectPath = searchParams.get('redirect');
+
+  useEffect(() => {
+    // Check if there's a pending invitation in localStorage
+    const storedInvitation = localStorage.getItem('pendingInvitation');
+    if (storedInvitation) {
+      setPendingInvitation(storedInvitation);
+    }
+  }, []);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,9 +53,16 @@ export default function LoginEmailOnly() {
       
       if (error) throw error;
       
-      // Redirect to home page after successful login
-      router.push('/');
-      router.refresh();
+      // Redirect will be handled by AuthRedirect component if there's a pending invitation
+      // Otherwise, redirect to the specified path or home page
+      if (!pendingInvitation) {
+        if (redirectPath) {
+          router.push(redirectPath);
+        } else {
+          router.push('/');
+        }
+        router.refresh();
+      }
     } catch (error: any) {
       console.error('Login error:', error);
       setError(language === 'es' 
@@ -43,6 +75,9 @@ export default function LoginEmailOnly() {
 
   return (
     <main className="min-h-screen p-4 md:p-8 flex items-center justify-center">
+      {/* Include the AuthRedirect component to handle pending invitations */}
+      <AuthRedirect />
+      
       <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg">
         <h1 className="text-2xl font-bold text-center mb-6">
           {language === 'es' ? 'Iniciar Sesión' : 'Login'} (Email Only)
@@ -51,6 +86,14 @@ export default function LoginEmailOnly() {
         {error && (
           <div className="bg-red-500 text-white p-3 rounded mb-4">
             {error}
+          </div>
+        )}
+        
+        {pendingInvitation && (
+          <div className="bg-blue-100 border border-blue-400 text-blue-800 p-3 rounded mb-4">
+            {language === 'es' 
+              ? 'Tienes una invitación pendiente. Inicia sesión para continuar.' 
+              : 'You have a pending invitation. Please log in to continue.'}
           </div>
         )}
         
@@ -123,5 +166,14 @@ export default function LoginEmailOnly() {
         </div>
       </div>
     </main>
+  );
+}
+
+// Export the component wrapped in Suspense
+export default function LoginEmailOnly() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginEmailOnlyContent />
+    </Suspense>
   );
 } 

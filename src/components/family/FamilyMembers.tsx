@@ -42,6 +42,12 @@ const validateEmail = (email: string) => {
   return emailRegex.test(email);
 };
 
+// Helper function to safely compare emails
+const safeEmailCompare = (email1: string | undefined | null, email2: string | undefined | null): boolean => {
+  if (!email1 || !email2) return false;
+  return email1.toLowerCase() === email2.toLowerCase();
+};
+
 export const FamilyMembers = () => {
   const { language } = useAppContext();
   const {
@@ -77,7 +83,8 @@ export const FamilyMembers = () => {
       return;
     }
 
-    const existingMember = members.find(m => m.email.toLowerCase() === email.toLowerCase());
+    // Use the safe email comparison helper
+    const existingMember = members.find(m => safeEmailCompare(m.email, email));
     if (existingMember) {
       toast({
         title: language === 'es' ? 'Miembro existente' : 'Existing member',
@@ -89,7 +96,8 @@ export const FamilyMembers = () => {
       return;
     }
 
-    const existingInvitation = invitations.find(i => i.email.toLowerCase() === email.toLowerCase());
+    // Use the safe email comparison helper
+    const existingInvitation = invitations.find(i => safeEmailCompare(i.email, email));
     if (existingInvitation) {
       toast({
         title: language === 'es' ? 'Invitación pendiente' : 'Pending invitation',
@@ -225,7 +233,7 @@ export const FamilyMembers = () => {
           {members.map((member) => (
             <Card key={member.id}>
               <CardHeader>
-                <CardTitle>{member.profile?.name || member.email}</CardTitle>
+                <CardTitle>{member.profile?.name || member.email || 'Unknown Member'}</CardTitle>
                 <CardDescription>{member.role}</CardDescription>
               </CardHeader>
               <CardContent className="flex justify-end space-x-2">

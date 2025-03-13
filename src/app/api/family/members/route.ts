@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
     // Fetch family members
     console.log('Fetching family members');
     try {
-      const { data: members, error: membersError } = await supabaseClient
+      const { data: membersData, error: membersError } = await supabaseClient
         .from('family_members')
         .select(`
           id,
@@ -107,7 +107,8 @@ export async function GET(request: NextRequest) {
           user_id,
           role,
           joined_at,
-          invited_by
+          invited_by,
+          email
         `)
         .eq('family_id', familyId);
 
@@ -119,7 +120,10 @@ export async function GET(request: NextRequest) {
         }, { status: 500 });
       }
 
-      console.log(`Found ${members?.length || 0} family members`);
+      console.log(`Found ${membersData?.length || 0} family members`);
+      
+      // Create a mutable copy of the members data
+      let members = [...membersData];
 
       // Now fetch profiles separately to avoid join issues
       const userIds = members.map(member => member.user_id);
@@ -145,6 +149,58 @@ export async function GET(request: NextRequest) {
       profiles?.forEach(profile => {
         profileMap.set(profile.id, profile);
       });
+
+      // Get user emails for any members missing email
+      const membersWithoutEmail = members.filter(m => !m.email);
+      if (membersWithoutEmail.length > 0) {
+        console.log(`Found ${membersWithoutEmail.length} members without email, fetching from auth.users`);
+        const userIds = membersWithoutEmail.map(m => m.user_id);
+        
+        try {
+          // Fetch user emails directly from auth.users
+          const { data: users, error: usersError } = await supabaseClient
+            .from('auth.users')
+            .select('id, email')
+            .in('id', userIds);
+          
+          if (!usersError && users && users.length > 0) {
+            console.log(`Found ${users.length} users with emails`);
+            
+            const userMap = new Map();
+            users.forEach(user => {
+              if (user.email) {
+                userMap.set(user.id, user.email);
+              }
+            });
+            
+            // Update members with emails
+            members = members.map(member => {
+              if (!member.email && userMap.has(member.user_id)) {
+                return {
+                  ...member,
+                  email: userMap.get(member.user_id)
+                };
+              }
+              return member;
+            });
+            
+            // Also update the database for future requests
+            for (const member of membersWithoutEmail) {
+              if (userMap.has(member.user_id)) {
+                await supabaseClient
+                  .from('family_members')
+                  .update({ email: userMap.get(member.user_id) })
+                  .eq('id', member.id);
+              }
+            }
+          } else {
+            console.log('No user emails found or error occurred:', usersError);
+          }
+        } catch (authError) {
+          console.error('Error fetching user emails:', authError);
+          // Continue without emails, don't fail the request
+        }
+      }
 
       const transformedMembers = members.map(member => {
         const profile = profileMap.get(member.user_id) || { name: null, avatar_url: null };

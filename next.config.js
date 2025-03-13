@@ -61,6 +61,12 @@ const nextConfig = {
       },
     ],
   },
+  env: {
+    LOOPS_API_KEY: process.env.LOOPS_API_KEY,
+    LOOPS_INVITATION_TRANSACTIONAL_ID: process.env.LOOPS_INVITATION_TRANSACTIONAL_ID,
+    NEXT_PUBLIC_LOOPS_API_KEY: process.env.NEXT_PUBLIC_LOOPS_API_KEY,
+    NEXT_PUBLIC_LOOPS_INVITATION_TRANSACTIONAL_ID: process.env.NEXT_PUBLIC_LOOPS_INVITATION_TRANSACTIONAL_ID,
+  },
   async headers() {
     return [
       {

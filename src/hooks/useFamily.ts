@@ -235,25 +235,63 @@ export const useFamily = (initialFamilyId?: string) => {
     role: FamilyRole
   ) => {
     try {
-      const response = await fetch('/api/family/invitations', {
+      if (!session) {
+        toast.error('You must be logged in to create an invitation');
+        return null;
+      }
+
+      if (!session.access_token) {
+        console.error('No access token available in session');
+        toast.error('Authentication error: No access token available');
+        return null;
+      }
+
+      console.log('Creating invitation for:', email, 'with role:', role);
+      
+      // First try with the session token
+      let response = await fetch('/api/family/invitations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({ familyId, email, role })
       });
-      if (!response.ok) throw new Error('Failed to create invitation');
+      
+      // If unauthorized, try without the token (relying on cookies)
+      if (response.status === 401) {
+        console.log('Token authentication failed, trying with cookies...');
+        response = await fetch('/api/family/invitations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ familyId, email, role })
+        });
+      }
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to create invitation:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: errorData
+        });
+        throw new Error(errorData.error || `Failed to create invitation: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
-      setInvitations((prev) => [...prev, data]);
+      console.log('Invitation created successfully:', data);
+      
+      setInvitations((prev) => [...prev, data.invitation]);
       toast.success('Invitation sent successfully');
-      return data;
-    } catch (error) {
+      return data.invitation;
+    } catch (error: any) {
       console.error('Error creating invitation:', error);
-      toast.error('Failed to send invitation');
+      toast.error(error.message || 'Failed to send invitation');
       return null;
     }
-  }, [session]);
+  }, [session, toast]);
 
   // Fetch invitations
   const fetchInvitations = useCallback(async (familyId: string) => {

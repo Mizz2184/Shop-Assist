@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Image URL in Grocery List</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #2563eb;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #4b5563;
+      margin-top: 30px;
+    }
+    pre {
+      background-color: #f3f4f6;
+      padding: 15px;
+      border-radius: 5px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .btn {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+    .btn:hover {
+      background-color: #1d4ed8;
+    }
+    .success-message {
+      background-color: #10b981;
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      margin-top: 10px;
+      display: none;
+    }
+    ol {
+      margin-left: 20px;
+    }
+    li {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Fix Image URL in Grocery List</h1>
+  
+  <p>This page provides instructions to fix the imageUrl field in your grocery_list table.</p>
+  
+  <h2>The Problem</h2>
+  <p>The product images are not showing in your grocery list because the imageUrl field is either missing, has the wrong case (imageurl instead of imageUrl), or contains null values.</p>
+  
+  <h2>The Solution</h2>
+  <p>Run the following SQL commands in your Supabase SQL Editor to fix the imageUrl field:</p>
+  
+  <div>
+    <pre id="sql-commands">-- Fix the imageUrl field in the grocery_list table
+DO $$
+BEGIN
+  -- Check if the imageUrl column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'grocery_list' AND column_name = 'imageUrl'
+  ) THEN
+    RAISE NOTICE 'imageUrl column already exists';
+  ELSE
+    -- Check if the imageurl column exists (lowercase)
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'grocery_list' AND column_name = 'imageurl'
+    ) THEN
+      -- Rename the column to the correct case
+      ALTER TABLE grocery_list RENAME COLUMN imageurl TO "imageUrl";
+      RAISE NOTICE 'Renamed imageurl column to imageUrl';
+    ELSE
+      -- Add the imageUrl column if it doesn't exist
+      ALTER TABLE grocery_list ADD COLUMN "imageUrl" TEXT;
+      RAISE NOTICE 'Added imageUrl column';
+    END IF;
+  END IF;
+  
+  -- Update any null imageUrl values to an empty string
+  UPDATE grocery_list SET "imageUrl" = '' WHERE "imageUrl" IS NULL;
+  RAISE NOTICE 'Updated null imageUrl values to empty string';
+END $$;</pre>
+    <button class="btn" onclick="copySQL()">Copy SQL</button>
+    <div id="success-message" class="success-message">SQL copied to clipboard!</div>
+  </div>
+  
+  <h2>Steps to Fix</h2>
+  <ol>
+    <li>Go to the <a href="https://app.supabase.com" target="_blank">Supabase dashboard</a></li>
+    <li>Select your project</li>
+    <li>Go to the SQL Editor</li>
+    <li>Copy and paste the SQL commands above</li>
+    <li>Run the SQL script</li>
+    <li>Return to your application and refresh the grocery list page</li>
+  </ol>
+  
+  <h2>What This Fix Does</h2>
+  <ul>
+    <li>Checks if the imageUrl column exists with the correct case</li>
+    <li>If it exists with the wrong case (imageurl), renames it to the correct case (imageUrl)</li>
+    <li>If it doesn't exist at all, adds the imageUrl column</li>
+    <li>Updates any null imageUrl values to an empty string to prevent errors</li>
+  </ul>
+  
+  <h2>After Fixing</h2>
+  <p>After running the fix, you should be able to see product images in your grocery list. If you still don't see images for existing items, you may need to add them again to ensure the imageUrl is properly stored.</p>
+  
+  <script>
+    function copySQL() {
+      const sqlCommands = document.getElementById('sql-commands').textContent;
+      navigator.clipboard.writeText(sqlCommands).then(() => {
+        const successMessage = document.getElementById('success-message');
+        successMessage.style.display = 'block';
+        setTimeout(() => {
+          successMessage.style.display = 'none';
+        }, 3000);
+      });
+    }
+  </script>
+</body>
+</html> 
