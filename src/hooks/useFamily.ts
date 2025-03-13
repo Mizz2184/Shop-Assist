@@ -27,11 +27,19 @@ export const useFamily = (initialFamilyId?: string) => {
   // Fetch family groups
   const fetchFamilyGroups = useCallback(async () => {
     try {
-      console.log('Fetching family groups...');
+      if (!session?.access_token) {
+        console.error('No access token available');
+        throw new Error('Authentication required');
+      }
+
+      console.log('Fetching family groups with token:', session.access_token.substring(0, 10) + '...');
+      
       const response = await fetch('/api/family', {
         headers: {
-          'Authorization': `Bearer ${session?.access_token}`
-        }
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
       });
 
       if (!response.ok) {
@@ -39,25 +47,34 @@ export const useFamily = (initialFamilyId?: string) => {
         console.error('Family groups API error:', {
           status: response.status,
           statusText: response.statusText,
-          data: errorData
+          data: errorData,
+          url: response.url
         });
-        throw new Error(`Failed to fetch family groups: ${response.status} ${errorData ? JSON.stringify(errorData) : ''}`);
+        
+        if (response.status === 401) {
+          throw new Error('Your session has expired. Please log in again.');
+        }
+        
+        throw new Error(`Failed to fetch family groups: ${response.status} ${errorData ? JSON.stringify(errorData) : response.statusText}`);
       }
 
       const data = await response.json();
       console.log('Family groups fetched:', data?.length || 0, 'groups');
       
       if (!Array.isArray(data)) {
-        console.error('Unexpected response format:', data);
-        throw new Error('Invalid response format from family groups API');
+        console.error('Invalid response format:', data);
+        throw new Error('Invalid response format from server');
       }
 
       return data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching family groups:', error);
+      if (error.message.includes('session has expired')) {
+        router.push('/login');
+      }
       throw error;
     }
-  }, [session]);
+  }, [session, router]);
 
   // Create family group
   const createFamilyGroup = useCallback(async (name: string) => {
