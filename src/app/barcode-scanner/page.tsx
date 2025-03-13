@@ -198,6 +198,32 @@ export default function BarcodeScannerPage() {
   };
 
   useEffect(() => {
+    // Auto-request camera permission when component mounts
+    const autoInitCamera = async () => {
+      try {
+        // Check if camera is already ready
+        if (cameraReady) return;
+        
+        // Check if browser supports getUserMedia
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Camera API is not supported in your browser');
+        }
+        
+        // Delay slightly to ensure DOM is fully loaded
+        setTimeout(() => {
+          if (videoRef.current) {
+            requestCameraPermission();
+          } else {
+            console.error('Video element not available for auto-initialization');
+          }
+        }, 500);
+      } catch (err) {
+        console.error('Error in auto camera initialization:', err);
+      }
+    };
+    
+    autoInitCamera();
+    
     // Cleanup function for camera resources
     return () => {
       if (controlsRef.current) {
@@ -215,7 +241,7 @@ export default function BarcodeScannerPage() {
         videoRef.current.srcObject = null;
       }
     };
-  }, []);
+  }, [cameraReady]);
 
   // Handle barcode detection
   const handleCapture = async (rawValue: string) => {

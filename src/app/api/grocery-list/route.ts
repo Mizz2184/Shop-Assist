@@ -152,9 +152,47 @@ export async function POST(request: NextRequest) {
 }
 
 // Remove an item from the grocery list
-export async function DELETE(request: NextRequest) {
+export async function DELETE(request: Request) {
   try {
-    const id = request.nextUrl.searchParams.get('id');
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Missing or invalid authorization header' },
+        { status: 401 }
+      );
+    }
+
+    // Extract the token
+    const token = authHeader.split(' ')[1];
+    
+    // Create a new Supabase client with the user's token
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      }
+    );
+    
+    // Get the current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error('Error getting user:', userError);
+      return NextResponse.json(
+        { error: 'Unauthorized: Invalid token' },
+        { status: 401 }
+      );
+    }
+    
+    // Get the item ID from the URL
+    const url = new URL(request.url);
+    const id = url.searchParams.get('id');
     
     if (!id) {
       return NextResponse.json(
@@ -168,7 +206,7 @@ export async function DELETE(request: NextRequest) {
       .from('grocery_list')
       .delete()
       .eq('id', id)
-      .eq('user_id', FIXED_USER_ID);
+      .eq('user_id', user.id);
     
     if (error) {
       console.error('Error removing item from grocery list:', error);
