@@ -46,10 +46,27 @@ export default function Login() {
     setError(null);
     
     try {
+      // Generate the PKCE code verifier
+      const codeVerifier = generateRandomString(64);
+      
+      // Store the code verifier in localStorage
+      localStorage.setItem('codeVerifier', codeVerifier);
+      
+      // Store the current path for redirect after login
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/auth/login') {
+        localStorage.setItem('redirectTo', currentPath);
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          skipBrowserRedirect: false,
         },
       });
       
@@ -63,6 +80,15 @@ export default function Login() {
         : 'Google login failed. Please try again.');
       setIsLoading(false);
     }
+  };
+
+  // Helper function to generate random string for code verifier
+  const generateRandomString = (length: number): string => {
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    const values = crypto.getRandomValues(new Uint8Array(length));
+    return Array.from(values)
+      .map(x => possible[x % possible.length])
+      .join('');
   };
 
   return (

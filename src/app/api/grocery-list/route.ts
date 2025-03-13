@@ -1,26 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '@/lib/supabase';
-
-// Fixed user ID for demo purposes
-const FIXED_USER_ID = '123e4567-e89b-12d3-a456-426614174000';
+import { createClient } from '@supabase/supabase-js';
 
 // Get all items in the grocery list
 export async function GET(request: NextRequest) {
   try {
-    // Fetch items from Supabase
-    const { data, error } = await supabase
+    // Get the authorization header
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Missing or invalid authorization header' }, { status: 401 });
+    }
+
+    // Extract the token
+    const token = authHeader.split(' ')[1];
+
+    // Create a new Supabase client with the user's token
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        },
+        auth: {
+          persistSession: false
+        }
+      }
+    );
+
+    // Get the current user's ID
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Fetch items from Supabase for the authenticated user
+    const { data, error } = await supabaseClient
       .from('grocery_list')
       .select('*')
-      .eq('user_id', FIXED_USER_ID)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     
     if (error) {
       console.error('Error fetching grocery list:', error);
-      return NextResponse.json([], { status: 500 });
+      return NextResponse.json(
+        { error: 'Failed to fetch grocery list' },
+        { status: 500 }
+      );
     }
     
-    return NextResponse.json(data || []);
+    return NextResponse.json({ data: data || [] });
   } catch (error) {
     console.error('Grocery list API error:', error);
     return NextResponse.json(
@@ -33,6 +68,40 @@ export async function GET(request: NextRequest) {
 // Add an item to the grocery list
 export async function POST(request: NextRequest) {
   try {
+    // Get the authorization header
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Missing or invalid authorization header' }, { status: 401 });
+    }
+
+    // Extract the token
+    const token = authHeader.split(' ')[1];
+
+    // Create a new Supabase client with the user's token
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        },
+        auth: {
+          persistSession: false
+        }
+      }
+    );
+
+    // Get the current user's ID
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     
     // Log the received product data
@@ -44,40 +113,21 @@ export async function POST(request: NextRequest) {
     // Prepare the item for insertion
     const item = {
       id,
-      user_id: FIXED_USER_ID,
+      user_id: user.id,
       name: body.name || 'Unknown Product',
       brand: body.brand || '',
       description: body.description || '',
       price: typeof body.price === 'number' ? body.price : 0,
       imageUrl: body.imageUrl || '',
       store: body.store || '',
-      url: body.url || ''
-      // Removed category and ean fields as they might not exist in the table
+      url: body.url || '',
+      created_at: new Date().toISOString()
     };
     
     // Insert into Supabase
-    let { error } = await supabase
+    const { error } = await supabaseClient
       .from('grocery_list')
       .insert(item);
-    
-    // If there's an error related to missing columns, try a more minimal insert
-    if (error && (error.message.includes('column') || error.code === 'PGRST204')) {
-      console.log('Trying minimal insert due to schema mismatch');
-      const minimalItem = {
-        id,
-        user_id: FIXED_USER_ID,
-        name: body.name || 'Unknown Product',
-        price: typeof body.price === 'number' ? body.price : 0,
-        store: body.store || '',
-        created_at: new Date().toISOString()
-      };
-      
-      const { error: minimalError } = await supabase
-        .from('grocery_list')
-        .insert(minimalItem);
-        
-      error = minimalError;
-    }
     
     if (error) {
       console.error('Error adding item to grocery list:', error);
@@ -137,4 +187,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

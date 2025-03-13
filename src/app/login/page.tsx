@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -47,13 +48,28 @@ export default function Login() {
     setError(null);
 
     try {
-      const { error } = await signInWithGoogle();
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          skipBrowserRedirect: true,
+        },
+      });
 
       if (error) {
         throw error;
       }
 
-      // The OAuth redirect will happen automatically
+      // Store the code verifier if available
+      const codeVerifier = (data as any)?.codeVerifier;
+      if (codeVerifier) {
+        localStorage.setItem('codeVerifier', codeVerifier);
+      }
+
+      // Redirect to the authorization URL
+      if (data?.url) {
+        window.location.href = data.url;
+      }
     } catch (error: any) {
       console.error('Error signing in with Google:', error);
       setError(error.message || 'Failed to sign in with Google. Please try again.');

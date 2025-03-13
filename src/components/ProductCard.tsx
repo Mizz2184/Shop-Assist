@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Product } from '@/types/product';
 import { useAppContext } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 interface ProductCardProps {
   product: Product;
@@ -64,10 +65,16 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
     setAddError(null);
     
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('No access token available');
+      }
+
       const response = await fetch('/api/grocery-list', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(product),
       });

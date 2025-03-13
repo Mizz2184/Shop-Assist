@@ -15,4 +15,5 @@ export interface Product {
   isAdded?: boolean;
   url: string;
   isMockProduct?: boolean;
+  created_at?: string;
 } 

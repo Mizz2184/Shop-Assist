@@ -8,6 +8,7 @@ import { useAppContext } from '@/contexts/AppContext';
 import Link from 'next/link';
 import ShareList from '@/components/ShareList';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function GroceryList() {
   const [groceryList, setGroceryList] = useState<Product[]>([]);
@@ -19,20 +20,36 @@ export default function GroceryList() {
   
   const router = useRouter();
   const { language, currency, exchangeRate, translate, setGroceryListCount } = useAppContext();
+  const { user, session } = useAuth();
 
   // Fetch grocery list
   useEffect(() => {
     const fetchGroceryList = async () => {
+      if (!session?.access_token) {
+        console.error('No access token available');
+        setError(language === 'es'
+          ? 'Por favor inicie sesión para ver su lista de compras.'
+          : 'Please log in to view your grocery list.');
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch('/api/grocery-list');
+        const response = await fetch('/api/grocery-list', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+        
         if (!response.ok) {
           throw new Error('Failed to fetch grocery list');
         }
-        const data = await response.json();
-        setGroceryList(data);
-        setGroceryListCount(data.length);
+        
+        const { data } = await response.json();
+        setGroceryList(data || []);
+        setGroceryListCount(data?.length || 0);
       } catch (error) {
         console.error('Error fetching grocery list:', error);
         setError(language === 'es' 
@@ -44,7 +61,7 @@ export default function GroceryList() {
     };
 
     fetchGroceryList();
-  }, [language, setGroceryListCount]);
+  }, [language, setGroceryListCount, session]);
 
   // Translate items when language changes
   useEffect(() => {
@@ -78,10 +95,20 @@ export default function GroceryList() {
   }, [groceryList, language, translate]);
 
   const handleRemoveItem = async (productId: string) => {
+    if (!session?.access_token) {
+      setError(language === 'es'
+        ? 'Por favor inicie sesión para eliminar artículos.'
+        : 'Please log in to remove items.');
+      return;
+    }
+
     try {
       setIsRemoving(true);
       const response = await fetch(`/api/grocery-list?id=${productId}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
       });
 
       if (!response.ok) {

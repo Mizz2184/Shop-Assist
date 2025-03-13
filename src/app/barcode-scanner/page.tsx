@@ -51,116 +51,154 @@ export default function BarcodeScannerPage() {
   const [cameraReady, setCameraReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+
+  const requestCameraPermission = async () => {
+    try {
+      console.log('Requesting camera permission...');
+      
+      // Make sure video element exists
+      if (!videoRef.current) {
+        throw new Error('Video element not ready. Please try again.');
+      }
+
+      // For iOS Safari, we need to start with minimal constraints
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+      // Try to get all video devices first
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      console.log('Available video devices:', videoDevices);
+
+      if (videoDevices.length === 0) {
+        throw new Error('No cameras found on your device');
+      }
+
+      // Set up constraints based on device type and available cameras
+      let constraints: MediaStreamConstraints;
+      
+      if (isMobile && videoDevices.length > 1) {
+        // Mobile device with multiple cameras - try to use back camera
+        constraints = {
+          video: {
+            facingMode: isIOS ? 'environment' : { exact: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+      } else if (isMobile) {
+        // Mobile device with single camera
+        constraints = {
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+      } else {
+        // Desktop device
+        constraints = {
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+      }
+
+      console.log('Requesting camera access with constraints:', constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Set up video element
+      videoRef.current.srcObject = stream;
+      videoRef.current.setAttribute('playsinline', 'true');
+      videoRef.current.setAttribute('autoplay', '');
+      videoRef.current.setAttribute('muted', '');
+
+      // Wait for video to be ready
+      await new Promise<void>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Video loading timed out'));
+        }, 10000);
+
+        if (!videoRef.current) {
+          clearTimeout(timeoutId);
+          reject(new Error('Video element not found'));
+          return;
+        }
+
+        videoRef.current.onloadedmetadata = () => {
+          console.log('Video metadata loaded');
+          clearTimeout(timeoutId);
+          
+          videoRef.current?.play()
+            .then(() => {
+              console.log('Video playback started successfully');
+              setCameraReady(true);
+              resolve();
+            })
+            .catch((error) => {
+              console.error('Error starting video playback:', error);
+              if (isIOS) {
+                setCameraReady(true); // Set ready anyway on iOS
+                resolve();
+              } else {
+                reject(error);
+              }
+            });
+        };
+      });
+
+      // Initialize barcode reader
+      console.log('Initializing barcode reader...');
+      const reader = new BrowserMultiFormatReader(undefined, {
+        delayBetweenScanAttempts: 100
+      });
+      
+      const controls = await reader.decodeFromVideoDevice(
+        undefined, 
+        videoRef.current,
+        (result, err) => {
+          if (result) {
+            console.log('Barcode detected:', result.getText());
+            handleCapture(result.getText());
+          }
+          if (err && !(err instanceof TypeError)) {
+            if (err.name !== 'NotFoundException') {
+              console.error('Scanning error:', err);
+            }
+          }
+        }
+      );
+      
+      controlsRef.current = controls;
+      
+      // Reset states
+      setPermissionDenied(false);
+      setScanning(true);
+      setError(null);
+    } catch (err: any) {
+      console.error('Error requesting camera permission:', err);
+      let errorMessage = 'Failed to initialize camera.';
+      
+      if (err.name === 'NotAllowedError' || err.message.includes('denied')) {
+        errorMessage = 'Camera access denied. Please allow camera access and try again.';
+        setPermissionDenied(true);
+      } else if (err.name === 'NotFoundError') {
+        errorMessage = 'No camera found. Please ensure your device has a camera.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage = 'Camera is in use by another application. Please close other apps using the camera.';
+      } else if (err.name === 'OverconstrainedError') {
+        errorMessage = 'Could not find a suitable camera. Please try again.';
+      }
+      
+      setError(errorMessage);
+      setScanning(false);
+    }
+  };
 
   useEffect(() => {
-    console.log('Initializing barcode scanner...');
-    
-    const initializeScanner = async () => {
-      try {
-        // First check if getUserMedia is supported
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error('Camera API is not supported in your browser');
-        }
-
-        let stream: MediaStream | undefined;
-        
-        // Try different constraints in order of preference
-        const constraints = [
-          // First try: environment camera (back camera) with basic settings
-          {
-            video: { facingMode: 'environment' }
-          },
-          // Second try: any camera
-          {
-            video: true
-          },
-          // Third try: specific constraints for older devices
-          {
-            video: {
-              facingMode: 'environment',
-              width: { ideal: 640 },
-              height: { ideal: 480 }
-            }
-          }
-        ];
-
-        let error;
-        for (const constraint of constraints) {
-          try {
-            console.log('Trying camera constraints:', constraint);
-            stream = await navigator.mediaDevices.getUserMedia(constraint);
-            console.log('Successfully got camera stream');
-            break;
-          } catch (e) {
-            error = e;
-            console.log('Failed to get camera with constraints:', constraint, e);
-            continue;
-          }
-        }
-
-        if (!stream) {
-          throw error || new Error('Could not initialize camera with any constraints');
-        }
-
-        setCameraReady(true);
-        
-        // Initialize ZXing reader
-        const reader = new BrowserMultiFormatReader();
-        
-        if (videoRef.current) {
-          console.log('Starting continuous decode from camera...');
-          
-          // Apply the stream to the video element
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(e => {
-            console.error('Error playing video:', e);
-            throw new Error('Failed to start video playback');
-          });
-          
-          const controls = await reader.decodeFromVideoDevice(
-            undefined, 
-            videoRef.current, 
-            (result, err) => {
-              if (result) {
-                console.log('Barcode detected:', result.getText(), 'Format:', result.getBarcodeFormat());
-                handleCapture(result.getText());
-              }
-              if (err && !(err instanceof TypeError)) {
-                // Log scanning errors but don't show to user unless persistent
-                console.debug('Scanning error:', err);
-                
-                // Only update UI for persistent errors
-                if (err.name !== 'NotFoundException') {
-                  setError('Error scanning barcode. Please try again or adjust the camera position.');
-                }
-              }
-            }
-          );
-          
-          controlsRef.current = controls;
-          
-          // Add video event listeners for better error handling
-          videoRef.current.addEventListener('loadedmetadata', () => {
-            console.log('Video metadata loaded');
-          });
-          
-          videoRef.current.addEventListener('error', (e) => {
-            console.error('Video error:', e);
-            setError('Camera error. Please try reloading the page.');
-          });
-        }
-      } catch (err) {
-        console.error('Camera initialization error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to initialize camera. Please reload the page.');
-        setScanning(false);
-      }
-    };
-
-    if (scanning) {
-      initializeScanner();
-    }
-
-    // Cleanup
+    // Cleanup function for camera resources
     return () => {
       if (controlsRef.current) {
         console.log('Cleaning up scanner...');
@@ -168,14 +206,16 @@ export default function BarcodeScannerPage() {
         controlsRef.current = null;
       }
       
-      // Clean up video stream
       if (videoRef.current && videoRef.current.srcObject) {
         const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
+        tracks.forEach(track => {
+          console.log('Stopping track:', track.label);
+          track.stop();
+        });
         videoRef.current.srcObject = null;
       }
     };
-  }, [scanning]);
+  }, []);
 
   // Handle barcode detection
   const handleCapture = async (rawValue: string) => {
@@ -285,126 +325,60 @@ export default function BarcodeScannerPage() {
       <div className="flex flex-col items-center justify-center">
         <h1 className="text-2xl font-bold mb-6">Barcode Scanner</h1>
         
-        {scanning ? (
-          <div className="w-full max-w-md">
-            <div className="relative aspect-square w-full overflow-hidden rounded-lg border-2 border-dashed border-gray-300 mb-4">
-              {cameraReady ? (
-                <video
-                  ref={videoRef}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
-                  <p className="text-gray-500">Waiting for camera access...</p>
-                </div>
-              )}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-3/4 h-1 bg-red-500 opacity-50"></div>
+        <div className="w-full max-w-md">
+          <div className="relative aspect-square w-full overflow-hidden rounded-lg border-2 border-dashed border-gray-300 mb-4">
+            <video
+              ref={videoRef}
+              className="absolute inset-0 h-full w-full object-cover"
+              playsInline
+              autoPlay
+              muted
+              style={{
+                transform: 'scaleX(-1)', // Mirror the video feed
+                width: '100%',
+                height: '100%'
+              }}
+            />
+            {!cameraReady && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 space-y-4 p-4">
+                <p className="text-gray-500 text-center">
+                  {permissionDenied 
+                    ? 'Camera access was denied'
+                    : 'Initializing camera...'}
+                </p>
+                <Button 
+                  onClick={requestCameraPermission}
+                  variant="outline"
+                >
+                  {permissionDenied 
+                    ? 'Grant Camera Permission'
+                    : 'Allow Camera Access'}
+                </Button>
+                <p className="text-xs text-gray-400 text-center">
+                  {permissionDenied 
+                    ? 'You need to allow camera access in your browser settings'
+                    : "If the camera doesn't start, click the button above"}
+                </p>
               </div>
-            </div>
-            <p className="text-center text-gray-500 mb-4">
-              {cameraReady 
-                ? "Position the barcode within the scanner view" 
-                : "Waiting for camera access..."}
-            </p>
-            <div className="flex flex-col gap-2">
-              <Button onClick={handleBack} variant="outline" className="w-full">
-                <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
-              </Button>
-              <Button onClick={handleTestScan} variant="secondary" className="w-full">
-                Test with Sample Product
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="w-full max-w-md">
-            {loading ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    <Skeleton className="h-4 w-3/4" />
-                  </CardTitle>
-                  <CardDescription>
-                    <Skeleton className="h-4 w-1/2" isInline />
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="aspect-square relative w-full mb-4">
-                    <Skeleton className="h-full w-full absolute" />
-                  </div>
-                  <Skeleton className="h-4 w-full mb-2" />
-                  <Skeleton className="h-4 w-2/3" />
-                </CardContent>
-                <CardFooter className="flex justify-between">
-                  <Skeleton className="h-10 w-28" />
-                  <Skeleton className="h-10 w-28" />
-                </CardFooter>
-              </Card>
-            ) : error ? (
-              <Card className="border-red-200">
-                <CardHeader>
-                  <CardTitle className="text-red-500">Error</CardTitle>
-                  <CardDescription>{error}</CardDescription>
-                </CardHeader>
-                <CardFooter>
-                  <Button onClick={handleReset} className="w-full">
-                    Try Again
-                  </Button>
-                </CardFooter>
-              </Card>
-            ) : product ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>{product.name}</CardTitle>
-                  <CardDescription>{product.brand}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="aspect-square relative w-full mb-4 bg-gray-100 rounded-md overflow-hidden">
-                    {product.imageUrl ? (
-                      <Image
-                        src={product.imageUrl}
-                        alt={product.name}
-                        fill
-                        className="object-contain"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <p className="text-gray-400">No image available</p>
-                      </div>
-                    )}
-                  </div>
-                  <p className="font-bold text-lg">₡{product.price.toLocaleString()}</p>
-                  <p className="text-sm text-gray-500 mt-2">
-                    {product.description || `Available at ${product.store}`}
-                  </p>
-                  {product.ean && (
-                    <p className="text-xs text-gray-400 mt-1">EAN: {product.ean}</p>
-                  )}
-                </CardContent>
-                <CardFooter className="flex justify-between">
-                  <Button onClick={handleReset} variant="outline">
-                    Scan Again
-                  </Button>
-                  <Button onClick={handleAddToList}>
-                    <ShoppingCart className="mr-2 h-4 w-4" /> Add to List
-                  </Button>
-                </CardFooter>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle>No Product Found</CardTitle>
-                  <CardDescription>Please try scanning again</CardDescription>
-                </CardHeader>
-                <CardFooter>
-                  <Button onClick={handleReset} className="w-full">
-                    Try Again
-                  </Button>
-                </CardFooter>
-              </Card>
             )}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-3/4 h-1 bg-red-500 opacity-50"></div>
+            </div>
           </div>
-        )}
+          <p className="text-center text-gray-500 mb-4">
+            {cameraReady 
+              ? "Position the barcode within the scanner view" 
+              : "Waiting for camera access..."}
+          </p>
+          <div className="flex flex-col gap-2">
+            <Button onClick={handleBack} variant="outline" className="w-full">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+            </Button>
+            <Button onClick={handleTestScan} variant="secondary" className="w-full">
+              Test with Sample Product
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

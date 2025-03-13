@@ -10,7 +10,7 @@ import { Product } from '@/types/product';
 
 export default function Dashboard() {
   const { language, currency, formatPrice } = useAppContext();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, session, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [recentItems, setRecentItems] = useState<Product[]>([]);
   const [monthlySpending, setMonthlySpending] = useState<number>(0);
@@ -27,71 +27,62 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      if (!user) return; // Don't fetch data if not logged in
+      if (!user || !session?.access_token) return; // Don't fetch data if not logged in or no token
       
       setIsLoading(true);
       setError(null);
       
       try {
-        // Fetch recent grocery list items
-        const groceryResponse = await fetch('/api/grocery-list');
+        // Fetch recent grocery list items with authentication
+        const groceryResponse = await fetch('/api/grocery-list', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+
         if (!groceryResponse.ok) {
           console.error('Grocery list API error:', groceryResponse.status);
-          // Don't throw an error, just set empty data
-          setRecentItems([]);
-          setMonthlySpending(0);
-        } else {
-          const groceryData = await groceryResponse.json();
-          
-          // Check if the response is an array (success) or an object with error (failure)
-          if (Array.isArray(groceryData)) {
-            // Sort by most recent and take the first 5
-            const sortedItems = groceryData.sort((a: any, b: any) => {
-              const dateA = a.createdAt || a.created_at || new Date().toISOString();
-              const dateB = b.createdAt || b.created_at || new Date().toISOString();
-              return new Date(dateB).getTime() - new Date(dateA).getTime();
-            }).slice(0, 5);
-            
-            setRecentItems(sortedItems);
-            
-            // Calculate monthly spending
-            const totalSpending = groceryData.reduce((total: number, item: Product) => total + (item.price || 0), 0);
-            setMonthlySpending(totalSpending);
-          } else {
-            console.error('Unexpected grocery list data format:', groceryData);
-            setRecentItems([]);
-            setMonthlySpending(0);
-          }
+          throw new Error(language === 'es' 
+            ? 'Error al cargar los datos del dashboard' 
+            : 'Error loading dashboard data');
         }
         
-        // Fetch promotions (simulated with a search for popular products)
-        const promoResponse = await fetch('/api/search?query=cafe&stores=maxipali');
-        if (!promoResponse.ok) {
-          console.error('Promotions API error:', promoResponse.status);
-          // Don't throw an error, just set empty data
-          setPromotions([]);
-        } else {
-          const promoData = await promoResponse.json();
-          setPromotions(promoData.products?.slice(0, 4) || []);
+        const { data, error } = await groceryResponse.json();
+        if (error) {
+          throw new Error(error);
         }
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError(language === 'es' 
-          ? 'Error al cargar los datos del dashboard' 
-          : 'Error loading dashboard data');
-        // Set empty data on error
+
+        setRecentItems(data || []);
+        
+        // Calculate monthly spending
+        const currentMonth = new Date().getMonth();
+        const currentYear = new Date().getFullYear();
+        const monthlyItems = data?.filter((item: Product) => {
+          const itemDate = new Date(item.created_at || '');
+          return itemDate.getMonth() === currentMonth && 
+                 itemDate.getFullYear() === currentYear;
+        }) || [];
+        
+        const total = monthlyItems.reduce((sum: number, item: Product) => 
+          sum + (item.price || 0), 0);
+        setMonthlySpending(total);
+        
+        setIsLoading(false);
+      } catch (error: any) {
+        console.error('Error fetching dashboard data:', error);
+        setError(error.message || (language === 'es' 
+          ? 'No se pudo cargar los datos del dashboard' 
+          : 'Failed to load dashboard data'));
         setRecentItems([]);
         setMonthlySpending(0);
-        setPromotions([]);
-      } finally {
         setIsLoading(false);
       }
     };
     
-    if (user) {
+    if (user && session?.access_token) {
       fetchDashboardData();
     }
-  }, [language, user]);
+  }, [language, user, session]);
 
   // Show loading state while checking authentication
   if (authLoading) {
@@ -310,4 +301,4 @@ export default function Dashboard() {
       </div>
     </div>
   );
-} 
+}
