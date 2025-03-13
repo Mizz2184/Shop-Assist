@@ -62,54 +62,56 @@ export default function BarcodeScannerPage() {
           throw new Error('Camera API is not supported in your browser');
         }
 
-        // Start with basic constraints
+        // Start with basic constraints for mobile
         let constraints: MediaStreamConstraints = {
-          video: { facingMode: 'environment' }
+          video: {
+            facingMode: { exact: 'environment' }, // Force rear camera
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
         };
 
+        let mediaStream: MediaStream;
+
         try {
-          // Try to get the stream with basic constraints first
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          console.log('Requesting camera access with constraints:', JSON.stringify(constraints));
+          mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
           
-          // If successful, try to apply advanced constraints
-          const advancedConstraints: MediaTrackConstraints = {
-            facingMode: 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            aspectRatio: { ideal: 1.7777777778 },
-            frameRate: { ideal: 30 }
-          };
-          
-          // Try to apply advanced constraints
-          await stream.getTracks()[0].applyConstraints(advancedConstraints);
-          setCameraReady(true);
-          
-          // Initialize ZXing reader with proper configuration
-          const reader = new BrowserMultiFormatReader();
+          // If we get here, we successfully got the stream
+          console.log('Camera stream obtained successfully');
           
           if (videoRef.current) {
-            console.log('Starting continuous decode from camera...');
+            console.log('Setting up video element...');
+            videoRef.current.srcObject = mediaStream;
             
-            // Apply the stream to the video element
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play().catch(e => {
-              console.error('Error playing video:', e);
-              throw new Error('Failed to start video playback');
+            // Wait for video to be ready
+            await new Promise((resolve) => {
+              if (videoRef.current) {
+                videoRef.current.onloadedmetadata = () => {
+                  console.log('Video metadata loaded');
+                  resolve(true);
+                };
+              }
             });
+            
+            await videoRef.current.play();
+            console.log('Video playback started');
+            setCameraReady(true);
+            
+            // Initialize ZXing reader
+            console.log('Initializing barcode reader...');
+            const reader = new BrowserMultiFormatReader();
             
             const controls = await reader.decodeFromVideoDevice(
               undefined, 
               videoRef.current, 
               (result, err) => {
                 if (result) {
-                  console.log('Barcode detected:', result.getText(), 'Format:', result.getBarcodeFormat());
+                  console.log('Barcode detected:', result.getText());
                   handleCapture(result.getText());
                 }
                 if (err && !(err instanceof TypeError)) {
-                  // Log scanning errors but don't show to user unless persistent
                   console.debug('Scanning error:', err);
-                  
-                  // Only update UI for persistent errors
                   if (err.name !== 'NotFoundException') {
                     setError('Error scanning barcode. Please try again or adjust the camera position.');
                   }
@@ -119,7 +121,7 @@ export default function BarcodeScannerPage() {
             
             controlsRef.current = controls;
             
-            // Add video event listeners for better error handling
+            // Add video event listeners
             videoRef.current.addEventListener('loadedmetadata', () => {
               console.log('Video metadata loaded');
             });
@@ -129,22 +131,66 @@ export default function BarcodeScannerPage() {
               setError('Camera error. Please try reloading the page.');
             });
           }
-        } catch (streamError: unknown) {
+        } catch (streamError: any) {
           console.error('Error getting stream:', streamError);
-          if (streamError instanceof Error) {
-            if (streamError.name === 'NotAllowedError') {
-              throw new Error('Camera access denied. Please allow camera access in your browser settings and reload the page.');
-            } else if (streamError.name === 'NotFoundError') {
-              throw new Error('No camera found. Please ensure your device has a camera and reload the page.');
-            } else if (streamError.name === 'NotReadableError') {
-              throw new Error('Could not access your camera. Please make sure no other app is using it and reload the page.');
+          
+          // If exact 'environment' fails, try without 'exact'
+          if (streamError.name === 'OverconstrainedError') {
+            console.log('Retrying with fallback constraints...');
+            constraints = {
+              video: {
+                facingMode: 'environment', // Try without 'exact'
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+              }
+            };
+            
+            try {
+              console.log('Requesting camera access with fallback constraints');
+              mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+              
+              if (videoRef.current) {
+                videoRef.current.srcObject = mediaStream;
+                await videoRef.current.play();
+                setCameraReady(true);
+                
+                // Initialize reader with fallback stream
+                const reader = new BrowserMultiFormatReader();
+                const controls = await reader.decodeFromVideoDevice(
+                  undefined,
+                  videoRef.current,
+                  (result, err) => {
+                    if (result) {
+                      console.log('Barcode detected:', result.getText());
+                      handleCapture(result.getText());
+                    }
+                  }
+                );
+                controlsRef.current = controls;
+              }
+            } catch (fallbackError) {
+              console.error('Fallback camera access failed:', fallbackError);
+              throw new Error('Could not access the camera. Please check your camera permissions and try again.');
             }
+          } else {
+            throw streamError;
           }
-          throw new Error('Could not access the camera. Please check your camera permissions and reload the page.');
         }
-      } catch (err: unknown) {
+      } catch (err: any) {
         console.error('Camera initialization error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to initialize camera. Please reload the page.');
+        if (err instanceof Error) {
+          if (err.name === 'NotAllowedError') {
+            setError('Camera access denied. Please allow camera access in your browser settings and reload the page.');
+          } else if (err.name === 'NotFoundError') {
+            setError('No camera found. Please ensure your device has a camera and reload the page.');
+          } else if (err.name === 'NotReadableError') {
+            setError('Could not access your camera. Please make sure no other app is using it and reload the page.');
+          } else {
+            setError(err.message || 'Failed to initialize camera. Please reload the page.');
+          }
+        } else {
+          setError('An unexpected error occurred. Please reload the page.');
+        }
         setScanning(false);
       }
     };
@@ -161,10 +207,13 @@ export default function BarcodeScannerPage() {
         controlsRef.current = null;
       }
       
-      // Clean up video stream
       if (videoRef.current && videoRef.current.srcObject) {
+        console.log('Cleaning up video stream...');
         const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
+        tracks.forEach(track => {
+          track.stop();
+          console.log('Stopped track:', track.kind);
+        });
         videoRef.current.srcObject = null;
       }
     };
