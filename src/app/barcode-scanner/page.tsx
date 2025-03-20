@@ -1,80 +1,63 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Webcam from 'react-webcam';
-import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library';
+import { useZxing } from 'react-zxing';
 import axios from 'axios';
 import { Product } from '@/types/product';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import Image from 'next/image';
 import { ArrowLeft, ShoppingCart, Camera, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Simple Skeleton component
-const Skeleton = ({ className }: { className?: string }) => (
-  <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className}`} />
-);
-
-// Simple shopping list hook implementation
-const useShoppingList = () => {
-  const addItem = (product: Product) => {
-    // Get existing items from localStorage
-    const existingItems = localStorage.getItem('shoppingList');
-    const items = existingItems ? JSON.parse(existingItems) : [];
-    
-    // Add the new item
-    items.push(product);
-    
-    // Save back to localStorage
-    localStorage.setItem('shoppingList', JSON.stringify(items));
-  };
-  
-  return { addItem };
-};
-
 export default function BarcodeScannerPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { addItem } = useShoppingList();
   const { user, session } = useAuth();
   
   const [product, setProduct] = useState<Product | null>(null);
-  const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cameraStarted, setCameraStarted] = useState(false);
-  const [permissionDenied, setPermissionDenied] = useState(false);
-  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
+  const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+  const [isScanning, setIsScanning] = useState(true);
   
-  const webcamRef = useRef<Webcam>(null);
-  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
-  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Initialize barcode reader
-  useEffect(() => {
-    readerRef.current = new BrowserMultiFormatReader();
-    
-    return () => {
-      // Clean up
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
+  // Configure zxing barcode scanner
+  const { ref, torch } = useZxing({
+    onDecodeResult(result) {
+      // Only process if we're actively scanning
+      if (isScanning) {
+        handleDecode(result.getText());
       }
+    },
+    onError(error) {
+      handleScannerError(error as Error);
+    },
+    paused: !isScanning || !!product || loading || cameraPermissionDenied
+  });
+  
+  // Start camera by default when component mounts
+  useEffect(() => {
+    // Reset error state and start scanning
+    setError(null);
+    setIsScanning(true);
+    
+    // Clean up on unmount
+    return () => {
+      setIsScanning(false);
     };
   }, []);
   
-  // Handle camera errors
-  const handleCameraError = (error: string | DOMException) => {
-    console.error('Camera error:', error);
-    setCameraStarted(false);
+  // Handle scan errors
+  function handleScannerError(error: Error) {
+    console.error('Scanner error:', error);
     
-    const errorMessage = error instanceof DOMException ? error.message : error;
-    
-    if ((error instanceof DOMException && error.name === 'NotAllowedError') || 
-        (typeof error === 'string' && error.includes('Permission denied'))) {
-      setPermissionDenied(true);
+    // Check for permission errors
+    if (error.name === 'NotAllowedError' || 
+        error.message.includes('Permission denied') || 
+        error.message.includes('not allowed')) {
+      setCameraPermissionDenied(true);
       setError('Camera access denied. Please allow camera access in your browser settings.');
       
       toast({
@@ -84,116 +67,25 @@ export default function BarcodeScannerPage() {
         duration: 5000,
       });
     } else {
-      setError(`Camera error: ${errorMessage}`);
+      setError(`Camera error: ${error.message}`);
     }
-  };
+  }
   
-  // Start scanning process
-  const startScanning = useCallback(() => {
-    if (!webcamRef.current?.video || !readerRef.current) {
-      return;
-    }
-    
-    setScanning(true);
-    setError(null);
-    
-    const scanBarcode = async () => {
-      if (!webcamRef.current?.video || !scanning) return;
-      
-      try {
-        // Get current frame from webcam
-        const video = webcamRef.current.video;
-        
-        // Only scan if video is playing and has dimensions
-        if (video.readyState === video.HAVE_ENOUGH_DATA &&
-            video.videoWidth > 0 &&
-            video.videoHeight > 0) {
-          
-          // Decode from video element
-          const result = await readerRef.current?.decodeFromVideoElement(video);
-          
-          if (result) {
-            console.log('Barcode detected:', result.getText());
-            handleCapture(result.getText());
-          }
-        }
-      } catch (error) {
-        // Ignore 'not found' errors as they're expected when no barcode is in frame
-        if (error instanceof NotFoundException) {
-          // Barcode not found in this frame, continue scanning
-          return;
-        }
-        
-        console.error('Scan error:', error);
-      }
-    };
-    
-    // Set up scanning interval
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-    }
-    
-    // Scan every 500ms
-    scanIntervalRef.current = setInterval(scanBarcode, 500);
-    
-    return () => {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-      }
-    };
-  }, [scanning]);
-  
-  // Handle camera start/stop
-  const toggleCamera = () => {
-    if (cameraStarted) {
-      // Stop camera
-      setCameraStarted(false);
-      setScanning(false);
-      
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-      }
-    } else {
-      // Start camera
-      setCameraStarted(true);
-      setPermissionDenied(false);
-      setError(null);
-      
-      // Start scanning after a short delay to ensure camera is initialized
-      setTimeout(() => {
-        startScanning();
-      }, 1000);
-    }
-  };
-  
-  // Start scanning when camera is started
-  useEffect(() => {
-    if (cameraStarted && !scanning) {
-      startScanning();
-    }
-  }, [cameraStarted, scanning, startScanning]);
-  
-  // Handle barcode capture
-  const handleCapture = async (barcodeValue: string) => {
-    // Ignore if already loading or same barcode scanned again
-    if (loading || lastScannedCode === barcodeValue) {
-      return;
-    }
+  // Handle successful barcode scan
+  async function handleDecode(result: string) {
+    // Skip if already loading or showing product details
+    if (loading || product) return;
     
     try {
-      setLastScannedCode(barcodeValue);
-      setScanning(false);
+      // Pause scanning while processing this barcode
+      setIsScanning(false);
       setLoading(true);
       setError(null);
-      
-      // Clear scanning interval
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-      }
+      console.log('Barcode detected:', result);
       
       // Fetch product data from API
-      console.log('Fetching product data for barcode:', barcodeValue);
-      const response = await axios.get(`/api/products/barcode/${barcodeValue}`);
+      console.log('Fetching product data for barcode:', result);
+      const response = await axios.get(`/api/products/barcode/${result}`);
       
       if (response.status === 200 && response.data) {
         console.log('Product found:', response.data);
@@ -205,30 +97,31 @@ export default function BarcodeScannerPage() {
           duration: 3000,
         });
       } else {
-        console.log('No product found for barcode:', barcodeValue);
-        setError('Product not found. Please try again.');
-        // Reset to scanning mode after error
+        console.log('No product found for barcode:', result);
+        setError('Product not found. Please try scanning again.');
+        
+        // Add a small delay before resuming scan
         setTimeout(() => {
-          setScanning(true);
-          startScanning();
+          setError(null);
+          setIsScanning(true);
         }, 2000);
       }
     } catch (error) {
       console.error('Error processing barcode:', error);
       setError('Failed to process barcode. Please try again.');
       
-      // Reset to scanning mode after error
+      // Add a small delay before resuming scan
       setTimeout(() => {
-        setScanning(true);
-        startScanning();
+        setError(null);
+        setIsScanning(true);
       }, 2000);
     } finally {
       setLoading(false);
     }
-  };
+  }
   
   // Handle adding product to grocery list
-  const handleAddToList = async () => {
+  async function handleAddToList() {
     if (!product) return;
     
     try {
@@ -275,11 +168,8 @@ export default function BarcodeScannerPage() {
         description: `${product.name} added to your grocery list`,
       });
       
-      // Reset scanner
-      setProduct(null);
-      setLastScannedCode(null);
-      setScanning(true);
-      startScanning();
+      // Reset and start scanning again
+      resetScanner();
     } catch (error) {
       console.error('Error adding to list:', error);
       toast({
@@ -290,20 +180,44 @@ export default function BarcodeScannerPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
   
-  // Reset scanner
-  const resetScanner = () => {
+  // Reset scanner to scan another barcode
+  function resetScanner() {
     setProduct(null);
-    setLastScannedCode(null);
-    setScanning(true);
-    startScanning();
-  };
+    setError(null);
+    setCameraPermissionDenied(false);
+    setIsScanning(true);
+  }
   
   // Format price
-  const formatPrice = (price: number) => {
+  function formatPrice(price: number) {
     return `₡${price.toLocaleString()}`;
-  };
+  }
+  
+  // Try to restart camera when permission denied and user wants to try again
+  function tryRestartCamera() {
+    setCameraPermissionDenied(false);
+    setError(null);
+    setIsScanning(true);
+  }
+  
+  // Toggle torch/flashlight
+  function toggleTorch() {
+    if (torch.isAvailable) {
+      if (torch.isOn) {
+        torch.off();
+      } else {
+        torch.on();
+      }
+    } else {
+      toast({
+        title: "Flashlight unavailable",
+        description: "Your device does not support flashlight control",
+        variant: "destructive",
+      });
+    }
+  }
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -370,28 +284,26 @@ export default function BarcodeScannerPage() {
             // Scanner view
             <div className="space-y-4">
               <div className="relative aspect-video bg-gray-900 rounded overflow-hidden">
-                {cameraStarted ? (
-                  <Webcam
-                    ref={webcamRef}
-                    audio={false}
-                    videoConstraints={{
-                      facingMode: "environment",
-                      width: { min: 640, ideal: 1280 },
-                      height: { min: 480, ideal: 720 }
-                    }}
-                    screenshotFormat="image/jpeg"
-                    className="w-full h-full object-cover"
-                    onUserMediaError={handleCameraError}
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-                    <Camera className="h-20 w-20 text-gray-600" />
+                {cameraPermissionDenied ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 p-4">
+                    <Camera className="h-16 w-16 text-gray-600 mb-4" />
+                    <p className="text-white text-center mb-4">
+                      Camera access is required to scan barcodes.
+                      Please allow camera access in your browser settings.
+                    </p>
+                    <Button onClick={tryRestartCamera}>
+                      Try Again
+                    </Button>
                   </div>
-                )}
-                
-                {scanning && cameraStarted && (
-                  // Scanner overlay
-                  <div className="absolute inset-x-0 top-1/2 h-1 bg-red-500 animate-pulse"></div>
+                ) : (
+                  <>
+                    <video ref={ref} className="w-full h-full object-cover" />
+                    
+                    {/* Scanner guide frame */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="border-2 border-green-500 w-2/3 h-1/3 rounded-lg"></div>
+                    </div>
+                  </>
                 )}
                 
                 {loading && (
@@ -408,20 +320,20 @@ export default function BarcodeScannerPage() {
                 </div>
               )}
               
-              <Button 
-                className="w-full" 
-                onClick={toggleCamera}
-                disabled={loading}
-              >
-                {cameraStarted ? 'Stop Camera' : 'Start Camera'}
-              </Button>
+              {!cameraPermissionDenied && torch.isAvailable !== null && (
+                <Button
+                  className="w-full"
+                  onClick={toggleTorch}
+                  disabled={loading || !torch.isAvailable}
+                >
+                  {torch.isOn ? 'Turn Off Flashlight' : 'Turn On Flashlight'}
+                </Button>
+              )}
               
               <p className="text-sm text-center text-gray-500 dark:text-gray-400">
-                {cameraStarted 
-                  ? (scanning 
-                      ? "Position barcode within view to scan" 
-                      : "Processing...") 
-                  : "Click 'Start Camera' to begin scanning"}
+                {!cameraPermissionDenied
+                  ? "Position barcode inside the green frame to scan"
+                  : "Camera access required for scanning"}
               </p>
             </div>
           )}
