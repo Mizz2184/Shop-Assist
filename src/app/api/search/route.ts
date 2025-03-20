@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
 import { Product } from '@/types/product';
+import pLimit from 'p-limit';
 // Remove the unused import
 // import { TranslationServiceClient } from '@google-cloud/translate';
 // Remove Supabase import if not needed
@@ -19,150 +20,43 @@ import { Product } from '@/types/product';
 //   key: process.env.GOOGLE_CLOUD_API_KEY
 // });
 
+// Create a rate limiter that allows 2 concurrent requests
+const limit = pLimit(2);
+
+// Create a request queue for MaxiPali API
+const maxipaliQueue = new Map();
+const QUEUE_TIMEOUT = 5000; // 5 seconds
+
 // Function to translate text between languages
 async function translateText(text: string, from: string, to: string): Promise<string> {
   try {
-    if (!text.trim()) return text;
-    
-    // For now, let's use a simple dictionary-based translation for common food terms
-    // This avoids the complexity of setting up Google Cloud Translation
-    const translations: Record<string, Record<string, string>> = {
-      en: {
-        'rice': 'arroz',
-        'milk': 'leche',
-        'bread': 'pan',
-        'water': 'agua',
-        'coffee': 'café',
-        'sugar': 'azúcar',
-        'salt': 'sal',
-        'chicken': 'pollo',
-        'beef': 'carne de res',
-        'fish': 'pescado',
-        'fruit': 'fruta',
-        'apple': 'manzana',
-        'banana': 'banano',
-        'orange': 'naranja',
-        'potato': 'papa',
-        'tomato': 'tomate',
-        'onion': 'cebolla',
-        'cheese': 'queso',
-        'egg': 'huevo',
-        'beans': 'frijoles',
-        'corn': 'maíz',
-        'flour': 'harina',
-        'oil': 'aceite',
-        'butter': 'mantequilla',
-        'pasta': 'pasta',
-        'cereal': 'cereal',
-        'yogurt': 'yogur',
-        'juice': 'jugo',
-        'soda': 'refresco',
-        'beer': 'cerveza',
-        'wine': 'vino',
-        'meat': 'carne',
-        'vegetable': 'vegetal',
-        'cookie': 'galleta',
-        'cake': 'pastel',
-        'chocolate': 'chocolate',
-        'candy': 'dulce',
-        'ice cream': 'helado',
-        'soup': 'sopa',
-        'sauce': 'salsa',
-        'spice': 'especia',
-        'herb': 'hierba',
-        'tea': 'té',
-        'honey': 'miel',
-        'jam': 'mermelada',
-        'peanut butter': 'mantequilla de maní',
-        'tortilla': 'tortilla',
-        'chip': 'chip',
-        'snack': 'bocadillo',
-        'frozen': 'congelado',
-        'canned': 'enlatado',
-        'fresh': 'fresco',
-        'organic': 'orgánico',
-        'gluten-free': 'sin gluten',
-        'dairy-free': 'sin lácteos',
-        'vegan': 'vegano',
-        'vegetarian': 'vegetariano'
-      },
-      es: {
-        'arroz': 'rice',
-        'leche': 'milk',
-        'pan': 'bread',
-        'agua': 'water',
-        'café': 'coffee',
-        'azúcar': 'sugar',
-        'sal': 'salt',
-        'pollo': 'chicken',
-        'carne de res': 'beef',
-        'pescado': 'fish',
-        'fruta': 'fruit',
-        'manzana': 'apple',
-        'banano': 'banana',
-        'naranja': 'orange',
-        'papa': 'potato',
-        'tomate': 'tomato',
-        'cebolla': 'onion',
-        'queso': 'cheese',
-        'huevo': 'egg',
-        'frijoles': 'beans',
-        'maíz': 'corn',
-        'harina': 'flour',
-        'aceite': 'oil',
-        'mantequilla': 'butter',
-        'pasta': 'pasta',
-        'cereal': 'cereal',
-        'yogur': 'yogurt',
-        'jugo': 'juice',
-        'refresco': 'soda',
-        'cerveza': 'beer',
-        'vino': 'wine',
-        'carne': 'meat',
-        'vegetal': 'vegetable',
-        'galleta': 'cookie',
-        'pastel': 'cake',
-        'chocolate': 'chocolate',
-        'dulce': 'candy',
-        'helado': 'ice cream',
-        'sopa': 'soup',
-        'salsa': 'sauce',
-        'especia': 'spice',
-        'hierba': 'herb',
-        'té': 'tea',
-        'miel': 'honey',
-        'mermelada': 'jam',
-        'mantequilla de maní': 'peanut butter',
-        'tortilla': 'tortilla',
-        'chip': 'chip',
-        'bocadillo': 'snack',
-        'congelado': 'frozen',
-        'enlatado': 'canned',
-        'fresco': 'fresh',
-        'orgánico': 'organic',
-        'sin gluten': 'gluten-free',
-        'sin lácteos': 'dairy-free',
-        'vegano': 'vegan',
-        'vegetariano': 'vegetarian'
-      }
-    };
-    
-    // Simple word-by-word translation
-    const sourceLanguage = from === 'en' ? 'en' : 'es';
-    const targetLanguage = to === 'en' ? 'en' : 'es';
-    
-    // Split the text into words and translate each one
-    const words = text.toLowerCase().split(/\s+/);
-    const translatedWords = words.map(word => {
-      const dictionary = translations[sourceLanguage];
-      return dictionary[word] || word;
-    });
-    
-    return translatedWords.join(' ');
+    // For now, just return the original text to avoid translation API costs
+    return text;
   } catch (error) {
     console.error('Translation error:', error);
-    return text; // Return original text if translation fails
+    return text;
   }
+}
+
+// Helper function to wait for a specific duration
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper function to check if we should throttle requests
+function shouldThrottle(store: string): boolean {
+  const now = Date.now();
+  const lastRequest = maxipaliQueue.get(store);
+  
+  if (!lastRequest) {
+    maxipaliQueue.set(store, now);
+    return false;
+  }
+  
+  if (now - lastRequest < QUEUE_TIMEOUT) {
+    return true;
+  }
+  
+  maxipaliQueue.set(store, now);
+  return false;
 }
 
 export async function GET(request: NextRequest) {
@@ -196,38 +90,54 @@ export async function GET(request: NextRequest) {
     // Array to store all products
     let allProducts: Product[] = [];
 
-    // Search in each selected store with both queries
+    // Search in each selected store with both queries, but limit concurrent requests
     for (const store of stores) {
       console.log(`Searching in ${store.charAt(0).toUpperCase() + store.slice(1)}...`);
       
-      let storeProducts: Product[] = [];
+      // Check if we should throttle requests to this store
+      if (shouldThrottle(store)) {
+        console.log(`Throttling requests to ${store}, waiting ${QUEUE_TIMEOUT}ms...`);
+        await wait(QUEUE_TIMEOUT);
+      }
       
-      // Search with Spanish query
-      const spanishProducts = await searchStore(store, spanishQuery, category);
-      
-      // Search with English query
-      const englishProducts = await searchStore(store, englishQuery, category);
-      
-      // Merge results, removing duplicates based on product ID
-      storeProducts = [...spanishProducts, ...englishProducts]
-        .filter((product, index, self) => 
-          index === self.findIndex((p) => p.id === product.id)
-        );
-      
-      // Add translated names to products
-      storeProducts = await Promise.all(storeProducts.map(async (product) => {
-        const translatedName = language === 'en' 
-          ? await translateText(product.name, 'es', 'en')
-          : await translateText(product.name, 'en', 'es');
+      try {
+        // Use p-limit to limit concurrent requests
+        const storeProducts = await limit(async () => {
+          // Search with Spanish query first
+          const spanishProducts = await searchStore(store, spanishQuery, category);
+          
+          // Wait a bit before making the second request
+          await wait(1000);
+          
+          // Search with English query
+          const englishProducts = await searchStore(store, englishQuery, category);
+          
+          // Merge results, removing duplicates based on product ID
+          return [...spanishProducts, ...englishProducts]
+            .filter((product, index, self) => 
+              index === self.findIndex((p) => p.id === product.id)
+            );
+        });
         
-        return {
-          ...product,
-          translatedName
-        };
-      }));
-      
-      console.log(`Found ${storeProducts.length} products from ${store}`);
-      allProducts = [...allProducts, ...storeProducts];
+        // Add translated names to products
+        const translatedProducts = await Promise.all(storeProducts.map(async (product) => {
+          const translatedName = language === 'en' 
+            ? await translateText(product.name, 'es', 'en')
+            : await translateText(product.name, 'en', 'es');
+          
+          return {
+            ...product,
+            translatedName
+          };
+        }));
+        
+        console.log(`Found ${translatedProducts.length} products from ${store}`);
+        allProducts = [...allProducts, ...translatedProducts];
+      } catch (storeError) {
+        console.error(`Error searching in ${store}:`, storeError);
+        // Continue with other stores even if one fails
+        continue;
+      }
     }
 
     // Log the total number of products found

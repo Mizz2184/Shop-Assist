@@ -29,7 +29,9 @@ export async function GET(request: NextRequest) {
           }
         },
         auth: {
-          persistSession: false
+          persistSession: false,
+          autoRefreshToken: true,
+          detectSessionInUrl: false
         }
       }
     );
@@ -46,11 +48,44 @@ export async function GET(request: NextRequest) {
     }
     console.log('User found:', user.id);
 
-    // Get family groups where user is a member
-    const { data: memberData, error: memberError } = await supabaseClient
-      .from('family_members')
-      .select('family_id')
-      .eq('user_id', user.id);
+    // Implement retry logic for fetching family memberships
+    let retries = 0;
+    const maxRetries = 3;
+    let memberData: any[] = [];
+    let memberError: any = null;
+
+    while (retries < maxRetries) {
+      try {
+        // Get family groups where user is a member
+        const result = await supabaseClient
+          .from('family_members')
+          .select('family_id')
+          .eq('user_id', user.id)
+          .limit(20);
+
+        memberData = result.data || [];
+        memberError = result.error;
+
+        if (!memberError) {
+          break;
+        }
+
+        console.log(`Retry ${retries + 1}/${maxRetries} failed:`, memberError);
+        retries++;
+        
+        if (retries < maxRetries) {
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+        }
+      } catch (error) {
+        console.error(`Error on retry ${retries + 1}:`, error);
+        retries++;
+        
+        if (retries < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+        }
+      }
+    }
 
     if (memberError) {
       console.log('Error fetching family memberships:', memberError);
@@ -62,12 +97,48 @@ export async function GET(request: NextRequest) {
     console.log('Member data found:', memberData?.length || 0, 'memberships');
 
     const familyIds = memberData?.map(member => member.family_id) || [];
+    
+    if (familyIds.length === 0) {
+      // Return empty array early if no memberships
+      return NextResponse.json([]);
+    }
 
-    // Get the family groups
-    const { data: familyGroups, error: familyError } = await supabaseClient
-      .from('family_groups')
-      .select('*')
-      .in('id', familyIds);
+    // Implement retry logic for fetching family groups
+    retries = 0;
+    let familyGroups: any[] = [];
+    let familyError: any = null;
+
+    while (retries < maxRetries) {
+      try {
+        // Get the family groups
+        const result = await supabaseClient
+          .from('family_groups')
+          .select('*')
+          .in('id', familyIds)
+          .limit(20); // Limit to 20 groups to reduce memory usage
+
+        familyGroups = result.data || [];
+        familyError = result.error;
+
+        if (!familyError) {
+          break;
+        }
+
+        console.log(`Retry ${retries + 1}/${maxRetries} failed:`, familyError);
+        retries++;
+        
+        if (retries < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+        }
+      } catch (error) {
+        console.error(`Error on retry ${retries + 1}:`, error);
+        retries++;
+        
+        if (retries < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+        }
+      }
+    }
 
     if (familyError) {
       console.log('Error fetching family groups:', familyError);

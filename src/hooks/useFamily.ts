@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,9 +12,32 @@ import {
 } from '@/types/family';
 import { subscribeToFamilyUpdates, unsubscribeFromFamilyUpdates } from '@/lib/realtime';
 
+// Increase throttle delay to reduce server load
+const THROTTLE_DELAY = 2000; // 2 seconds
+const INITIALIZATION_DELAY = 500; // 0.5 seconds
+const lastRequestTime = new Map<string, number>();
+
+// Helper function to check if we should throttle a request
+const shouldThrottle = (key: string): boolean => {
+  const now = Date.now();
+  const last = lastRequestTime.get(key);
+  if (!last) {
+    lastRequestTime.set(key, now);
+    return false;
+  }
+  if (now - last < THROTTLE_DELAY) {
+    return true;
+  }
+  lastRequestTime.set(key, now);
+  return false;
+};
+
+// Helper function to wait
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const useFamily = (initialFamilyId?: string) => {
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, getAccessToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [familyGroups, setFamilyGroups] = useState<FamilyGroup[]>([]);
@@ -23,23 +46,35 @@ export const useFamily = (initialFamilyId?: string) => {
   const [invitations, setInvitations] = useState<FamilyInvitation[]>([]);
   const [sharedLists, setSharedLists] = useState<SharedGroceryList[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const hasInitializedRef = useRef(false);
+  const initializationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Fetch family groups
+  // Fetch family groups with retry logic and throttling
   const fetchFamilyGroups = useCallback(async () => {
     try {
-      if (!session?.access_token) {
+      // Get a fresh access token
+      const token = await getAccessToken();
+      if (!token) {
         console.error('No access token available');
         throw new Error('Authentication required');
       }
 
-      console.log('Fetching family groups with token:', session.access_token.substring(0, 10) + '...');
-      
+      // Check if we should throttle this request
+      if (shouldThrottle('fetchFamilyGroups')) {
+        await wait(THROTTLE_DELAY);
+      }
+
+      // Create new abort controller
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const response = await fetch('/api/family', {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        credentials: 'include'
+        signal: controller.signal
       });
 
       if (!response.ok) {
@@ -47,34 +82,40 @@ export const useFamily = (initialFamilyId?: string) => {
         console.error('Family groups API error:', {
           status: response.status,
           statusText: response.statusText,
-          data: errorData,
-          url: response.url
+          data: errorData
         });
         
         if (response.status === 401) {
           throw new Error('Your session has expired. Please log in again.');
         }
         
-        throw new Error(`Failed to fetch family groups: ${response.status} ${errorData ? JSON.stringify(errorData) : response.statusText}`);
+        throw new Error(`Failed to fetch family groups: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('Family groups fetched:', data?.length || 0, 'groups');
       
       if (!Array.isArray(data)) {
         console.error('Invalid response format:', data);
         throw new Error('Invalid response format from server');
       }
 
+      console.log('Family groups fetched:', data.length, 'groups');
       return data;
     } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Family groups fetch was aborted');
+        return [];
+      }
+
       console.error('Error fetching family groups:', error);
       if (error.message.includes('session has expired')) {
         router.push('/login');
       }
       throw error;
+    } finally {
+      abortControllerRef.current = null;
     }
-  }, [session, router]);
+  }, [getAccessToken, router]);
 
   // Create family group
   const createFamilyGroup = useCallback(async (name: string) => {
@@ -627,67 +668,55 @@ export const useFamily = (initialFamilyId?: string) => {
     let isMounted = true;
 
     const initializeFamily = async () => {
-      if (!isMounted) return;
-      
+      // If already initialized or no session, don't proceed
+      if (hasInitializedRef.current || !session?.access_token) {
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         setError(null);
 
-        if (!session?.access_token) {
-          console.log('No session available, waiting for session...');
-          setFamilyGroups([]);
-          setCurrentFamily(null);
-          setLoading(false);
-          return;
-        }
+        // Add a small delay before initialization to prevent race conditions
+        await wait(INITIALIZATION_DELAY);
 
-        console.log('Starting family initialization...');
+        // Only proceed if still mounted and not initialized
+        if (!isMounted || hasInitializedRef.current) return;
+
         const groups = await fetchFamilyGroups();
         
+        // Only proceed if still mounted
         if (!isMounted) return;
-        
-        console.log('Family groups initialized:', groups?.length || 0, 'groups found');
-        setFamilyGroups(groups || []);
 
-        // If we have an initial family ID and groups, set it before marking loading as complete
-        if (groups && groups.length > 0 && initialFamilyId) {
-          console.log('Setting initial family:', initialFamilyId);
-          const family = groups.find((g: FamilyGroup) => g.id === initialFamilyId);
-          if (family) {
-            setCurrentFamily(family);
-            // Fetch additional data in the background
-            Promise.all([
-              fetchFamilyMembers(family.id).then(result => {
-                if (result && isMounted) setMembers(result);
-              }),
-              fetchInvitations(family.id).then(result => {
-                if (result && isMounted) setInvitations(result);
-              }),
-              fetchSharedLists(family.id).then(result => {
-                if (result && isMounted) setSharedLists(result);
-              })
-            ]).catch(error => {
-              console.error('Error fetching family data:', error);
-            });
+        if (Array.isArray(groups)) {
+          setFamilyGroups(groups);
+          hasInitializedRef.current = true;
+
+          // If we have an initial family ID, set it
+          if (initialFamilyId) {
+            const family = groups.find((g) => g.id === initialFamilyId);
+            if (family) {
+              setCurrentFamily(family);
+            }
           }
         }
 
-        // Set loading to false after we have set both groups and initial family
+        // Fetch notifications after a delay
         if (isMounted) {
-          setLoading(false);
+          initializationTimeoutRef.current = setTimeout(() => {
+            if (isMounted) {
+              fetchNotifications().catch(console.error);
+            }
+          }, THROTTLE_DELAY);
         }
-
-        // Fetch notifications in the background
-        fetchNotifications().catch(error => {
-          console.error('Error fetching notifications:', error);
-        });
-
-      } catch (error) {
-        console.error('Error initializing family:', error);
+      } catch (error: any) {
+        if (isMounted && error.name !== 'AbortError') {
+          console.error('Error initializing family:', error);
+          setError(error.message || 'Failed to initialize family data');
+        }
+      } finally {
         if (isMounted) {
-          setError(error instanceof Error ? error.message : 'Failed to initialize family data');
-          setFamilyGroups([]);
-          setCurrentFamily(null);
           setLoading(false);
         }
       }
@@ -697,8 +726,15 @@ export const useFamily = (initialFamilyId?: string) => {
 
     return () => {
       isMounted = false;
+      if (initializationTimeoutRef.current) {
+        clearTimeout(initializationTimeoutRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      lastRequestTime.clear();
     };
-  }, [fetchFamilyGroups, fetchNotifications, initialFamilyId, fetchFamilyMembers, fetchInvitations, fetchSharedLists, session]);
+  }, [fetchFamilyGroups, fetchNotifications, initialFamilyId, session?.access_token]);
 
   // Set up real-time updates when current family changes
   useEffect(() => {
@@ -721,6 +757,18 @@ export const useFamily = (initialFamilyId?: string) => {
       unsubscribeFromFamilyUpdates();
     };
   }, [currentFamily, fetchFamilyMembers, fetchNotifications, fetchSharedLists]);
+
+  // Clean up function
+  useEffect(() => {
+    return () => {
+      // Abort any pending requests when component unmounts
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      // Clear request timestamps
+      lastRequestTime.clear();
+    };
+  }, []);
 
   return {
     loading,

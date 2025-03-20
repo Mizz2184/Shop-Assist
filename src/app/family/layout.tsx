@@ -1,11 +1,16 @@
 'use client';
 
-import { FamilyProvider } from '@/contexts/FamilyContext';
+import { Suspense } from 'react';
+import LoadingAnimation from '@/components/LoadingAnimation';
 
 export default function FamilyLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <FamilyProvider>{children}</FamilyProvider>;
+  return (
+    <Suspense fallback={<LoadingAnimation text="Loading family data..." />}>
+      {children}
+    </Suspense>
+  );
 } 

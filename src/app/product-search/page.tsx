@@ -11,23 +11,9 @@ export default function ProductSearch() {
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStores, setSelectedStores] = useState<string[]>(['maxipali']);
   const [searchPerformed, setSearchPerformed] = useState(false);
   const { language, theme } = useAppContext();
-
-  // Define categories with translations
-  const categories = [
-    { value: 'all', es: 'Todas las categorías', en: 'All categories' },
-    { value: 'dairy', es: 'Lácteos', en: 'Dairy' },
-    { value: 'produce', es: 'Frutas y Verduras', en: 'Produce' },
-    { value: 'meat', es: 'Carnes', en: 'Meat' },
-    { value: 'bakery', es: 'Panadería', en: 'Bakery' },
-    { value: 'beverages', es: 'Bebidas', en: 'Beverages' },
-    { value: 'snacks', es: 'Snacks', en: 'Snacks' },
-    { value: 'household', es: 'Hogar', en: 'Household' },
-    { value: 'personal', es: 'Cuidado Personal', en: 'Personal Care' },
-  ];
 
   // Define stores
   const stores = [
@@ -90,11 +76,6 @@ export default function ProductSearch() {
         language
       });
       
-      // Add category if not 'all'
-      if (selectedCategory !== 'all') {
-        params.append('category', selectedCategory);
-      }
-      
       console.log(`Searching for: ${query} in stores: ${selectedStores.join(', ')}`);
       
       // Fetch search results
@@ -155,38 +136,18 @@ export default function ProductSearch() {
       
       {/* Search Form */}
       <form onSubmit={performSearch} className="mb-8 max-w-2xl mx-auto">
-        <div className="flex flex-col md:flex-row gap-4 mb-4">
-          <div className="flex-grow">
-            <label htmlFor="search-query" className="block text-sm font-medium mb-2">
-              {language === 'es' ? 'Nombre del producto' : 'Product name'}
-            </label>
-            <input
-              type="text"
-              id="search-query"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={language === 'es' ? 'Ej: leche, arroz, café...' : 'E.g., milk, rice, coffee...'}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800"
-            />
-          </div>
-          
-          <div className="md:w-1/3">
-            <label htmlFor="category" className="block text-sm font-medium mb-2">
-              {language === 'es' ? 'Categoría' : 'Category'}
-            </label>
-            <select
-              id="category"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800"
-            >
-              {categories.map((category) => (
-                <option key={category.value} value={category.value}>
-                  {language === 'es' ? category.es : category.en}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="mb-4">
+          <label htmlFor="search-query" className="block text-sm font-medium mb-2">
+            {language === 'es' ? 'Nombre del producto' : 'Product name'}
+          </label>
+          <input
+            type="text"
+            id="search-query"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={language === 'es' ? 'Ej: leche, arroz, café...' : 'E.g., milk, rice, coffee...'}
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800"
+          />
         </div>
         
         {/* Store Selection */}

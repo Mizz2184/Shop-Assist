@@ -3,6 +3,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 
+// Simple in-memory cache for grocery list data
+// This will help reduce database queries
+const cache = new Map<string, { data: any; timestamp: number }>();
+const cacheTTL = 30 * 1000; // 30 seconds cache TTL
+
+// Rate limiting
+const rateLimit = new Map<string, number[]>();
+const MAX_REQUESTS = 10;
+const WINDOW_MS = 10000; // 10 seconds
+
 // Get all items in the grocery list
 export async function GET(request: NextRequest) {
   try {
@@ -40,12 +50,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Apply rate limiting
+    const userId = user.id;
+    const now = Date.now();
+    const userRequests = rateLimit.get(userId) || [];
+    
+    // Remove requests outside the current window
+    const recentRequests = userRequests.filter((timestamp: number) => now - timestamp < WINDOW_MS);
+    
+    // Check if user has exceeded rate limit
+    if (recentRequests.length >= MAX_REQUESTS) {
+      return NextResponse.json(
+        { error: 'Too many requests, please try again later' },
+        { status: 429 }
+      );
+    }
+    
+    // Update rate limit tracking
+    recentRequests.push(now);
+    rateLimit.set(userId, recentRequests);
+
+    // Check cache first
+    const cacheKey = `grocery_list_${userId}`;
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData && cachedData.timestamp > now - cacheTTL) {
+      return NextResponse.json({ data: cachedData.data || [] });
+    }
+
     // Fetch items from Supabase for the authenticated user
+    // Limit the number of items to reduce memory usage
     const { data, error } = await supabaseClient
       .from('grocery_list')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(100); // Limit to 100 items to prevent excessive memory usage
     
     if (error) {
       console.error('Error fetching grocery list:', error);
@@ -54,6 +94,12 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
+    
+    // Update cache
+    cache.set(cacheKey, {
+      data,
+      timestamp: now
+    });
     
     return NextResponse.json({ data: data || [] });
   } catch (error) {

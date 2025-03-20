@@ -16,7 +16,7 @@ interface ProductCardProps {
 export default function ProductCard({ product, isPriority = false }: ProductCardProps) {
   const router = useRouter();
   const { language, currency, exchangeRate, translate } = useAppContext();
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const [isAddingToList, setIsAddingToList] = useState(false);
   const [isAdded, setIsAdded] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -65,8 +65,10 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
     setAddError(null);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      // Get a fresh access token
+      const token = await getAccessToken();
+      
+      if (!token) {
         throw new Error('No access token available');
       }
 
@@ -74,7 +76,7 @@ export default function ProductCard({ product, isPriority = false }: ProductCard
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(product),
       });

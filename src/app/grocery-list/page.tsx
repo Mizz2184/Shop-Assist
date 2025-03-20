@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Product } from '@/types/product';
@@ -9,6 +9,8 @@ import Link from 'next/link';
 import ShareList from '@/components/ShareList';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '@/contexts/AuthContext';
+import React from 'react';
+import LoadingAnimation from '@/components/LoadingAnimation';
 
 export default function GroceryList() {
   const [groceryList, setGroceryList] = useState<Product[]>([]);
@@ -17,39 +19,70 @@ export default function GroceryList() {
   const [translatedItems, setTranslatedItems] = useState<Record<string, any>>({});
   const [isRemoving, setIsRemoving] = useState(false);
   const [listId] = useState(() => uuidv4());
+  const hasFetchedRef = useRef(false);
   
   const router = useRouter();
   const { language, currency, exchangeRate, translate, setGroceryListCount } = useAppContext();
-  const { user, session } = useAuth();
+  const { user, session, getAccessToken } = useAuth();
 
   // Fetch grocery list
   useEffect(() => {
     const fetchGroceryList = async () => {
-      if (!session?.access_token) {
-        console.error('No access token available');
-        setError(language === 'es'
-          ? 'Por favor inicie sesión para ver su lista de compras.'
-          : 'Please log in to view your grocery list.');
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
-      setError(null);
       try {
-        const response = await fetch('/api/grocery-list', {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        });
+        setIsLoading(true);
+        setError(null);
         
-        if (!response.ok) {
-          throw new Error('Failed to fetch grocery list');
+        if (!user) {
+          setError(language === 'es'
+            ? 'Por favor inicie sesión para ver su lista de compras.'
+            : 'Please log in to view your grocery list.');
+          setIsLoading(false);
+          return;
         }
         
-        const { data } = await response.json();
-        setGroceryList(data || []);
-        setGroceryListCount(data?.length || 0);
+        // Get a fresh access token
+        const token = await getAccessToken();
+        
+        if (!token) {
+          throw new Error(language === 'es'
+            ? 'No se pudo obtener un token de acceso válido. Por favor, inicie sesión de nuevo.'
+            : 'Could not get a valid access token. Please log in again.');
+        }
+        
+        // Implement retry logic
+        let retries = 0;
+        const maxRetries = 3;
+        
+        while (retries < maxRetries) {
+          try {
+            const response = await fetch('/api/grocery-list', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error('Failed to fetch grocery list');
+            }
+            
+            const { data } = await response.json();
+            setGroceryList(data || []);
+            setGroceryListCount(data?.length || 0);
+            return;
+          } catch (fetchError) {
+            retries++;
+            console.error(`Fetch attempt ${retries} failed:`, fetchError);
+            
+            if (retries >= maxRetries) {
+              throw fetchError;
+            }
+            
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+          }
+        }
+        
+        throw new Error('Failed to fetch grocery list after multiple attempts');
       } catch (error) {
         console.error('Error fetching grocery list:', error);
         setError(language === 'es' 
@@ -60,8 +93,17 @@ export default function GroceryList() {
       }
     };
 
-    fetchGroceryList();
-  }, [language, setGroceryListCount, session]);
+    // Only fetch when component mounts or when dependencies change
+    if (user && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchGroceryList();
+    }
+    
+    // Clean up function
+    return () => {
+      // We don't reset the ref here to prevent refetching on every render
+    };
+  }, [language, setGroceryListCount, user, getAccessToken]);
 
   // Translate items when language changes
   useEffect(() => {
@@ -95,7 +137,7 @@ export default function GroceryList() {
   }, [groceryList, language, translate]);
 
   const handleRemoveItem = async (productId: string) => {
-    if (!session?.access_token) {
+    if (!user) {
       setError(language === 'es'
         ? 'Por favor inicie sesión para eliminar artículos.'
         : 'Please log in to remove items.');
@@ -104,10 +146,20 @@ export default function GroceryList() {
 
     try {
       setIsRemoving(true);
+      
+      // Get a fresh access token
+      const token = await getAccessToken();
+      
+      if (!token) {
+        throw new Error(language === 'es'
+          ? 'No se pudo obtener un token de acceso válido. Por favor, inicie sesión de nuevo.'
+          : 'Could not get a valid access token. Please log in again.');
+      }
+      
       const response = await fetch(`/api/grocery-list?id=${productId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -161,7 +213,7 @@ export default function GroceryList() {
 
       {isLoading ? (
         <div className="flex justify-center items-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+          <LoadingAnimation text={language === 'es' ? 'Cargando lista de compras...' : 'Loading grocery list...'} />
         </div>
       ) : error ? (
         <div className="bg-red-500 text-white p-4 rounded-md mb-6">

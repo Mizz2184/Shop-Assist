@@ -1,14 +1,26 @@
 import { useZxing } from "react-zxing";
 import { useState } from "react";
 
-const BarcodeScanner = () => {
-  const [result, setResult] = useState("");
+const BarcodeScanner = ({ onScan, onError }) => {
+  const [isScanning, setIsScanning] = useState(true);
   
   const { ref } = useZxing({
     onDecodeResult(result) {
-      setResult(result.getText());
-      // Handle your barcode result here
-      console.log("Barcode detected:", result.getText());
+      if (isScanning) {
+        setIsScanning(false);
+        const code = result.getText();
+        // Handle your barcode result here
+        console.log("Barcode detected:", code);
+        if (onScan) {
+          onScan(code);
+        }
+      }
+    },
+    onError(error) {
+      console.error("Scanner error:", error);
+      if (onError) {
+        onError(error);
+      }
     },
     constraints: {
       video: {
@@ -19,12 +31,15 @@ const BarcodeScanner = () => {
     },
   });
 
-  return (
-    <div className="scanner-container">
-      <video ref={ref} />
-      <p>{result}</p>
-    </div>
-  );
+  const resetScanner = () => {
+    setIsScanning(true);
+  };
+
+  return {
+    scannerRef: ref,
+    resetScanner,
+    isScanning
+  };
 };
 
 export default BarcodeScanner;

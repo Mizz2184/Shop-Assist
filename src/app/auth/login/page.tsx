@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { useAppContext } from '@/contexts/AppContext';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
 export default function Login() {
@@ -11,54 +12,70 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user } = useAuth();
   const { language } = useAppContext();
+
+  // If user is already logged in, redirect to dashboard
+  useEffect(() => {
+    if (user) {
+      const redirectTo = searchParams.get('redirectTo') || '/dashboard';
+      router.push(redirectTo);
+    }
+  }, [user, router, searchParams]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      
+
       if (error) throw error;
-      
-      // Redirect to home page after successful login
-      router.push('/');
-      router.refresh();
+
+      // Successful login will trigger the useEffect above to redirect
     } catch (error: any) {
-      console.error('Login error:', error);
-      setError(language === 'es' 
-        ? 'Error al iniciar sesión. Por favor, verifique su correo electrónico y contraseña.' 
-        : 'Login failed. Please check your email and password.');
+      console.error('Email login error:', error);
+      setError(language === 'es'
+        ? 'Error al iniciar sesión. Por favor, verifique sus credenciales.'
+        : 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-    
     try {
-      // Generate the PKCE code verifier
+      setIsLoading(true);
+      setError(null);
+      
+      // Generate a code verifier for PKCE
+      const generateRandomString = (length: number): string => {
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+        const values = crypto.getRandomValues(new Uint8Array(length));
+        return Array.from(values)
+          .map(x => possible[x % possible.length])
+          .join('');
+      };
+      
+      // Generate and store code verifier
       const codeVerifier = generateRandomString(64);
-      
-      // Store the code verifier in localStorage
       localStorage.setItem('codeVerifier', codeVerifier);
+      console.log('Code verifier stored:', codeVerifier);
       
-      // Store the current path for redirect after login
-      const currentPath = window.location.pathname;
-      if (currentPath !== '/auth/login') {
-        localStorage.setItem('redirectTo', currentPath);
+      // Store redirect path if provided
+      const redirectTo = searchParams.get('redirectTo');
+      if (redirectTo) {
+        localStorage.setItem('redirectTo', redirectTo);
       }
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      // Initiate OAuth flow
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
@@ -72,7 +89,7 @@ export default function Login() {
       
       if (error) throw error;
       
-      // The redirect is handled by Supabase OAuth
+      // The redirect will be handled by Supabase
     } catch (error: any) {
       console.error('Google login error:', error);
       setError(language === 'es'
@@ -82,131 +99,116 @@ export default function Login() {
     }
   };
 
-  // Helper function to generate random string for code verifier
-  const generateRandomString = (length: number): string => {
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-    const values = crypto.getRandomValues(new Uint8Array(length));
-    return Array.from(values)
-      .map(x => possible[x % possible.length])
-      .join('');
-  };
-
   return (
-    <main className="min-h-screen p-4 md:p-8 flex items-center justify-center">
-      <div className="max-w-md w-full p-6 bg-card-dark rounded-lg shadow-lg">
-        <h1 className="text-2xl font-bold text-center mb-6">
-          {language === 'es' ? 'Iniciar Sesión' : 'Login'}
-        </h1>
-        
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
+            {language === 'es' ? 'Iniciar Sesión' : 'Sign In'}
+          </h2>
+        </div>
+
         {error && (
-          <div className="bg-red-500 text-white p-3 rounded mb-4">
-            {error}
+          <div className="bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-3 rounded relative" role="alert">
+            <span className="block sm:inline">{error}</span>
           </div>
         )}
-        
-        <form onSubmit={handleEmailLogin} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium mb-1">
-              {language === 'es' ? 'Correo Electrónico' : 'Email'}
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="input w-full"
-              required
-            />
+
+        <form className="mt-8 space-y-6" onSubmit={handleEmailLogin}>
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div>
+              <label htmlFor="email-address" className="sr-only">
+                {language === 'es' ? 'Correo electrónico' : 'Email address'}
+              </label>
+              <input
+                id="email-address"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm bg-white dark:bg-gray-800"
+                placeholder={language === 'es' ? 'Correo electrónico' : 'Email address'}
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="sr-only">
+                {language === 'es' ? 'Contraseña' : 'Password'}
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm bg-white dark:bg-gray-800"
+                placeholder={language === 'es' ? 'Contraseña' : 'Password'}
+              />
+            </div>
           </div>
-          
+
           <div>
-            <label htmlFor="password" className="block text-sm font-medium mb-1">
-              {language === 'es' ? 'Contraseña' : 'Password'}
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="input w-full"
-              required
-            />
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {isLoading ? (
+                <span className="absolute left-0 inset-y-0 flex items-center pl-3">
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </span>
+              ) : null}
+              {language === 'es' ? 'Iniciar Sesión' : 'Sign In'}
+            </button>
           </div>
-          
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="btn w-full bg-white text-black border border-black hover:bg-gray-100"
-          >
-            {isLoading
-              ? language === 'es'
-                ? 'Iniciando sesión...'
-                : 'Logging in...'
-              : language === 'es'
-              ? 'Iniciar Sesión'
-              : 'Login'}
-          </button>
         </form>
-        
-        <div className="my-4 flex items-center">
-          <div className="flex-grow border-t border-gray-600"></div>
-          <span className="px-3 text-sm text-gray-400">
-            {language === 'es' ? 'O' : 'OR'}
-          </span>
-          <div className="flex-grow border-t border-gray-600"></div>
+
+        <div className="mt-6">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300 dark:border-gray-700"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400">
+                {language === 'es' ? 'O continuar con' : 'Or continue with'}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <button
+              onClick={handleGoogleLogin}
+              disabled={isLoading}
+              className="w-full flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
+                <path
+                  fill="currentColor"
+                  d="M12.545,12.151L12.545,12.151c0,1.054,0.855,1.909,1.909,1.909h3.536c-0.447,1.722-1.502,3.178-2.945,4.182c-1.445,1.004-3.214,1.511-5.046,1.511c-2.372,0-4.658-0.944-6.34-2.626c-1.682-1.682-2.626-3.968-2.626-6.34c0-2.372,0.944-4.658,2.626-6.34c1.682-1.682,3.968-2.626,6.34-2.626c2.372,0,4.658,0.944,6.34,2.626l-2.484,2.484c-0.947-0.947-2.234-1.479-3.575-1.479c-1.342,0-2.628,0.532-3.575,1.479c-0.947,0.947-1.479,2.234-1.479,3.575c0,1.342,0.532,2.628,1.479,3.575c0.947,0.947,2.234,1.479,3.575,1.479c1.342,0,2.628-0.532,3.575-1.479L12.545,12.151z"
+                />
+              </svg>
+              {language === 'es' ? 'Continuar con Google' : 'Continue with Google'}
+            </button>
+          </div>
         </div>
-        
-        <button
-          type="button"
-          onClick={handleGoogleLogin}
-          className="btn w-full bg-white text-black border border-black hover:bg-gray-100 flex items-center justify-center gap-2"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 48 48"
-            width="24px"
-            height="24px"
+
+        <div className="text-center">
+          <Link
+            href="/auth/signup"
+            className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
           >
-            <path
-              fill="#FFC107"
-              d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"
-            />
-            <path
-              fill="#FF3D00"
-              d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"
-            />
-            <path
-              fill="#4CAF50"
-              d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"
-            />
-            <path
-              fill="#1976D2"
-              d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"
-            />
-          </svg>
-          {language === 'es' ? 'Continuar con Google' : 'Continue with Google'}
-        </button>
-        
-        <p className="mt-4 text-center text-sm">
-          {language === 'es' ? '¿No tienes una cuenta?' : "Don't have an account?"}{' '}
-          <Link href="/auth/signup" className="text-primary hover:underline">
-            {language === 'es' ? 'Regístrate' : 'Sign up'}
+            {language === 'es'
+              ? '¿No tienes una cuenta? Regístrate'
+              : "Don't have an account? Sign up"}
           </Link>
-        </p>
-        
-        <div className="mt-6 text-center text-sm space-y-2">
-          <p>
-            <Link href="/auth/login-email-only" className="text-primary hover:underline">
-              {language === 'es' ? 'Usar solo inicio de sesión con correo' : 'Use email-only login'}
-            </Link>
-          </p>
-          <p>
-            <Link href="/auth/fix-auth" className="text-primary hover:underline">
-              {language === 'es' ? 'Solucionar problemas de autenticación' : 'Troubleshoot authentication issues'}
-            </Link>
-          </p>
         </div>
       </div>
-    </main>
+    </div>
   );
 } 

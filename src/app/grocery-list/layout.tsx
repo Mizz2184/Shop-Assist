@@ -1,11 +1,16 @@
 'use client';
 
-import { FamilyProvider } from '@/contexts/FamilyContext';
+import { Suspense } from 'react';
+import LoadingAnimation from '@/components/LoadingAnimation';
 
 export default function GroceryListLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <FamilyProvider>{children}</FamilyProvider>;
+  return (
+    <Suspense fallback={<LoadingAnimation text="Loading grocery list..." />}>
+      {children}
+    </Suspense>
+  );
 } 

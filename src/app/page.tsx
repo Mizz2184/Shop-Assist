@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import LoadingAnimation from '@/components/LoadingAnimation';
 
 export default function Home() {
   const router = useRouter();
@@ -18,10 +19,10 @@ export default function Home() {
     }
   }, [user, isLoading, router]);
 
-  // Show loading spinner while checking authentication
+  // Show loading animation while checking authentication
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black dark:border-white"></div>
+      <LoadingAnimation text="Preparing your shopping experience..." />
     </div>
   );
 } 

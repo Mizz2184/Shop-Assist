@@ -1,24 +1,21 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
-import { BarcodeFormat } from '@zxing/library';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Webcam from 'react-webcam';
+import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library';
 import axios from 'axios';
 import { Product } from '@/types/product';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Image from 'next/image';
-import { ArrowLeft, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Camera, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Simple Skeleton component
-const Skeleton = ({ className, isInline = false }: { className?: string; isInline?: boolean }) => (
-  isInline ? (
-    <span className={`animate-pulse bg-gray-200 rounded inline-block ${className}`} />
-  ) : (
-    <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
-  )
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className}`} />
 );
 
 // Simple shopping list hook implementation
@@ -42,370 +39,394 @@ export default function BarcodeScannerPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { addItem } = useShoppingList();
-  const [scanning, setScanning] = useState(true);
+  const { user, session } = useAuth();
+  
+  const [product, setProduct] = useState<Product | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [product, setProduct] = useState<Product | null>(null);
-  const [scanAttempts, setScanAttempts] = useState(0);
-  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsRef = useRef<IScannerControls | null>(null);
+  const [cameraStarted, setCameraStarted] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
-
-  const requestCameraPermission = async () => {
-    try {
-      console.log('Requesting camera permission...');
-      
-      // Make sure video element exists
-      if (!videoRef.current) {
-        throw new Error('Video element not ready. Please try again.');
+  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
+  
+  const webcamRef = useRef<Webcam>(null);
+  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Initialize barcode reader
+  useEffect(() => {
+    readerRef.current = new BrowserMultiFormatReader();
+    
+    return () => {
+      // Clean up
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
       }
-
-      // For iOS Safari, we need to start with minimal constraints
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-      // Try to get all video devices first
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      console.log('Available video devices:', videoDevices);
-
-      if (videoDevices.length === 0) {
-        throw new Error('No cameras found on your device');
-      }
-
-      // Set up constraints based on device type and available cameras
-      let constraints: MediaStreamConstraints;
+    };
+  }, []);
+  
+  // Handle camera errors
+  const handleCameraError = (error: string | DOMException) => {
+    console.error('Camera error:', error);
+    setCameraStarted(false);
+    
+    const errorMessage = error instanceof DOMException ? error.message : error;
+    
+    if ((error instanceof DOMException && error.name === 'NotAllowedError') || 
+        (typeof error === 'string' && error.includes('Permission denied'))) {
+      setPermissionDenied(true);
+      setError('Camera access denied. Please allow camera access in your browser settings.');
       
-      if (isMobile && videoDevices.length > 1) {
-        // Mobile device with multiple cameras - try to use back camera
-        constraints = {
-          video: {
-            facingMode: isIOS ? 'environment' : { exact: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        };
-      } else if (isMobile) {
-        // Mobile device with single camera
-        constraints = {
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        };
-      } else {
-        // Desktop device
-        constraints = {
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        };
-      }
-
-      console.log('Requesting camera access with constraints:', constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      toast({
+        title: "Camera Access Denied",
+        description: "You need to allow camera access to use the barcode scanner",
+        variant: "destructive",
+        duration: 5000,
+      });
+    } else {
+      setError(`Camera error: ${errorMessage}`);
+    }
+  };
+  
+  // Start scanning process
+  const startScanning = useCallback(() => {
+    if (!webcamRef.current?.video || !readerRef.current) {
+      return;
+    }
+    
+    setScanning(true);
+    setError(null);
+    
+    const scanBarcode = async () => {
+      if (!webcamRef.current?.video || !scanning) return;
       
-      // Set up video element
-      videoRef.current.srcObject = stream;
-      videoRef.current.setAttribute('playsinline', 'true');
-      videoRef.current.setAttribute('autoplay', '');
-      videoRef.current.setAttribute('muted', '');
-
-      // Wait for video to be ready
-      await new Promise<void>((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          reject(new Error('Video loading timed out'));
-        }, 10000);
-
-        if (!videoRef.current) {
-          clearTimeout(timeoutId);
-          reject(new Error('Video element not found'));
-          return;
-        }
-
-        videoRef.current.onloadedmetadata = () => {
-          console.log('Video metadata loaded');
-          clearTimeout(timeoutId);
+      try {
+        // Get current frame from webcam
+        const video = webcamRef.current.video;
+        
+        // Only scan if video is playing and has dimensions
+        if (video.readyState === video.HAVE_ENOUGH_DATA &&
+            video.videoWidth > 0 &&
+            video.videoHeight > 0) {
           
-          videoRef.current?.play()
-            .then(() => {
-              console.log('Video playback started successfully');
-              setCameraReady(true);
-              resolve();
-            })
-            .catch((error) => {
-              console.error('Error starting video playback:', error);
-              if (isIOS) {
-                setCameraReady(true); // Set ready anyway on iOS
-                resolve();
-              } else {
-                reject(error);
-              }
-            });
-        };
-      });
-
-      // Initialize barcode reader
-      console.log('Initializing barcode reader...');
-      const reader = new BrowserMultiFormatReader(undefined, {
-        delayBetweenScanAttempts: 100
-      });
-      
-      const controls = await reader.decodeFromVideoDevice(
-        undefined, 
-        videoRef.current,
-        (result, err) => {
+          // Decode from video element
+          const result = await readerRef.current?.decodeFromVideoElement(video);
+          
           if (result) {
             console.log('Barcode detected:', result.getText());
             handleCapture(result.getText());
           }
-          if (err && !(err instanceof TypeError)) {
-            if (err.name !== 'NotFoundException') {
-              console.error('Scanning error:', err);
-            }
-          }
         }
-      );
-      
-      controlsRef.current = controls;
-      
-      // Reset states
-      setPermissionDenied(false);
-      setScanning(true);
-      setError(null);
-    } catch (err: any) {
-      console.error('Error requesting camera permission:', err);
-      let errorMessage = 'Failed to initialize camera.';
-      
-      if (err.name === 'NotAllowedError' || err.message.includes('denied')) {
-        errorMessage = 'Camera access denied. Please allow camera access and try again.';
-        setPermissionDenied(true);
-      } else if (err.name === 'NotFoundError') {
-        errorMessage = 'No camera found. Please ensure your device has a camera.';
-      } else if (err.name === 'NotReadableError') {
-        errorMessage = 'Camera is in use by another application. Please close other apps using the camera.';
-      } else if (err.name === 'OverconstrainedError') {
-        errorMessage = 'Could not find a suitable camera. Please try again.';
+      } catch (error) {
+        // Ignore 'not found' errors as they're expected when no barcode is in frame
+        if (error instanceof NotFoundException) {
+          // Barcode not found in this frame, continue scanning
+          return;
+        }
+        
+        console.error('Scan error:', error);
       }
-      
-      setError(errorMessage);
+    };
+    
+    // Set up scanning interval
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+    }
+    
+    // Scan every 500ms
+    scanIntervalRef.current = setInterval(scanBarcode, 500);
+    
+    return () => {
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+      }
+    };
+  }, [scanning]);
+  
+  // Handle camera start/stop
+  const toggleCamera = () => {
+    if (cameraStarted) {
+      // Stop camera
+      setCameraStarted(false);
       setScanning(false);
+      
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+      }
+    } else {
+      // Start camera
+      setCameraStarted(true);
+      setPermissionDenied(false);
+      setError(null);
+      
+      // Start scanning after a short delay to ensure camera is initialized
+      setTimeout(() => {
+        startScanning();
+      }, 1000);
     }
   };
-
+  
+  // Start scanning when camera is started
   useEffect(() => {
-    // Auto-request camera permission when component mounts
-    const autoInitCamera = async () => {
-      try {
-        // Check if camera is already ready
-        if (cameraReady) return;
-        
-        // Check if browser supports getUserMedia
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error('Camera API is not supported in your browser');
-        }
-        
-        // Delay slightly to ensure DOM is fully loaded
-        setTimeout(() => {
-          if (videoRef.current) {
-            requestCameraPermission();
-          } else {
-            console.error('Video element not available for auto-initialization');
-          }
-        }, 500);
-      } catch (err) {
-        console.error('Error in auto camera initialization:', err);
-      }
-    };
-    
-    autoInitCamera();
-    
-    // Cleanup function for camera resources
-    return () => {
-      if (controlsRef.current) {
-        console.log('Cleaning up scanner...');
-        controlsRef.current.stop();
-        controlsRef.current = null;
-      }
-      
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => {
-          console.log('Stopping track:', track.label);
-          track.stop();
-        });
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [cameraReady]);
-
-  // Handle barcode detection
-  const handleCapture = async (rawValue: string) => {
-    console.log('handleCapture called with barcode:', rawValue);
-    
-    if (loading || !scanning) {
-      console.log('Loading in progress or not scanning, ignoring barcode');
+    if (cameraStarted && !scanning) {
+      startScanning();
+    }
+  }, [cameraStarted, scanning, startScanning]);
+  
+  // Handle barcode capture
+  const handleCapture = async (barcodeValue: string) => {
+    // Ignore if already loading or same barcode scanned again
+    if (loading || lastScannedCode === barcodeValue) {
       return;
     }
     
     try {
-      // Skip if we've already scanned this code recently
-      if (lastScannedCode === rawValue) {
-        console.log('Skipping duplicate barcode');
-        return;
-      }
-      
-      setLastScannedCode(rawValue);
+      setLastScannedCode(barcodeValue);
       setScanning(false);
       setLoading(true);
       setError(null);
       
-      // Stop the scanner
-      if (controlsRef.current) {
-        controlsRef.current.stop();
+      // Clear scanning interval
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
       }
       
       // Fetch product data from API
-      console.log('Fetching product data for barcode:', rawValue);
-      const response = await axios.get(`/api/products/barcode/${rawValue}`);
+      console.log('Fetching product data for barcode:', barcodeValue);
+      const response = await axios.get(`/api/products/barcode/${barcodeValue}`);
       
       if (response.status === 200 && response.data) {
         console.log('Product found:', response.data);
         setProduct(response.data);
+        
         toast({
           title: 'Product found!',
           description: `${response.data.name} has been scanned successfully.`,
+          duration: 3000,
         });
       } else {
-        console.log('No product found for barcode:', rawValue);
+        console.log('No product found for barcode:', barcodeValue);
         setError('Product not found. Please try again.');
-        setScanAttempts(prev => prev + 1);
+        // Reset to scanning mode after error
+        setTimeout(() => {
+          setScanning(true);
+          startScanning();
+        }, 2000);
       }
-    } catch (err: any) {
-      console.error('Error fetching product:', err);
-      setError(err.response?.data?.error || 'Failed to fetch product. Please try again.');
-      setScanAttempts(prev => prev + 1);
+    } catch (error) {
+      console.error('Error processing barcode:', error);
+      setError('Failed to process barcode. Please try again.');
       
-      // Special handling for Bimbo Cero Cero Blanco
-      if (rawValue === '7441029522686') {
-        console.log('Detected Bimbo Cero Cero Blanco EAN, retrying with direct lookup...');
-        try {
-          const retryResponse = await axios.get(`/api/products/barcode/7441029522686?retry=true`);
-          if (retryResponse.status === 200 && retryResponse.data) {
-            setProduct(retryResponse.data);
-            setError(null);
-            toast({
-              title: 'Product found!',
-              description: `${retryResponse.data.name} has been scanned successfully.`,
-            });
-          }
-        } catch (retryErr) {
-          console.error('Retry failed:', retryErr);
-        }
-      }
+      // Reset to scanning mode after error
+      setTimeout(() => {
+        setScanning(true);
+        startScanning();
+      }, 2000);
     } finally {
       setLoading(false);
     }
   };
-
-  // Reset scanner
-  const handleReset = () => {
-    console.log('Resetting scanner');
-    setScanning(true);
-    setProduct(null);
-    setError(null);
-    setLastScannedCode(null);
-  };
-
-  // Add product to shopping list
-  const handleAddToList = () => {
-    if (product) {
-      console.log('Adding product to shopping list:', product.name);
-      addItem(product);
-      toast({
-        title: 'Added to list',
-        description: `${product.name} has been added to your shopping list.`,
+  
+  // Handle adding product to grocery list
+  const handleAddToList = async () => {
+    if (!product) return;
+    
+    try {
+      if (!user) {
+        toast({
+          title: "Authentication required",
+          description: "Please log in to add items to your grocery list",
+          variant: "destructive",
+        });
+        
+        router.push('/auth/login');
+        return;
+      }
+      
+      if (!session?.access_token) {
+        toast({
+          title: "Session expired",
+          description: "Your session has expired. Please log in again.",
+          variant: "destructive",
+        });
+        
+        router.push('/auth/login');
+        return;
+      }
+      
+      setLoading(true);
+      
+      // Call API to add to grocery list
+      const response = await fetch('/api/grocery-list', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(product)
       });
-      router.push('/shopping-list');
+      
+      if (!response.ok) {
+        throw new Error('Failed to add to grocery list');
+      }
+      
+      toast({
+        title: "Added to list",
+        description: `${product.name} added to your grocery list`,
+      });
+      
+      // Reset scanner
+      setProduct(null);
+      setLastScannedCode(null);
+      setScanning(true);
+      startScanning();
+    } catch (error) {
+      console.error('Error adding to list:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add item to grocery list",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
-
-  // Go back to home
-  const handleBack = () => {
-    console.log('Navigating back to home');
-    router.push('/');
+  
+  // Reset scanner
+  const resetScanner = () => {
+    setProduct(null);
+    setLastScannedCode(null);
+    setScanning(true);
+    startScanning();
   };
-
-  // Handle manual test scan (for debugging)
-  const handleTestScan = () => {
-    console.log('Testing with Bimbo Cero Cero Blanco EAN');
-    handleCapture('7441029522686');
+  
+  // Format price
+  const formatPrice = (price: number) => {
+    return `₡${price.toLocaleString()}`;
   };
-
+  
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col items-center justify-center">
-        <h1 className="text-2xl font-bold mb-6">Barcode Scanner</h1>
-        
-        <div className="w-full max-w-md">
-          <div className="relative aspect-square w-full overflow-hidden rounded-lg border-2 border-dashed border-gray-300 mb-4">
-            <video
-              ref={videoRef}
-              className="absolute inset-0 h-full w-full object-cover"
-              playsInline
-              autoPlay
-              muted
-              style={{
-                transform: 'scaleX(-1)', // Mirror the video feed
-                width: '100%',
-                height: '100%'
-              }}
-            />
-            {!cameraReady && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 space-y-4 p-4">
-                <p className="text-gray-500 text-center">
-                  {permissionDenied 
-                    ? 'Camera access was denied'
-                    : 'Initializing camera...'}
-                </p>
-                <Button 
-                  onClick={requestCameraPermission}
-                  variant="outline"
-                >
-                  {permissionDenied 
-                    ? 'Grant Camera Permission'
-                    : 'Allow Camera Access'}
-                </Button>
-                <p className="text-xs text-gray-400 text-center">
-                  {permissionDenied 
-                    ? 'You need to allow camera access in your browser settings'
-                    : "If the camera doesn't start, click the button above"}
-                </p>
-              </div>
-            )}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-3/4 h-1 bg-red-500 opacity-50"></div>
-            </div>
-          </div>
-          <p className="text-center text-gray-500 mb-4">
-            {cameraReady 
-              ? "Position the barcode within the scanner view" 
-              : "Waiting for camera access..."}
-          </p>
-          <div className="flex flex-col gap-2">
-            <Button onClick={handleBack} variant="outline" className="w-full">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
-            </Button>
-            <Button onClick={handleTestScan} variant="secondary" className="w-full">
-              Test with Sample Product
-            </Button>
-          </div>
-        </div>
+      <div className="flex items-center mb-6">
+        <Button 
+          variant="ghost" 
+          className="p-0 mr-4" 
+          onClick={() => router.push('/')}
+        >
+          <ArrowLeft className="h-6 w-6" />
+        </Button>
+        <h1 className="text-2xl font-bold">Barcode Scanner</h1>
       </div>
+      
+      <Card className="w-full max-w-md mx-auto mb-6">
+        <CardContent className="p-4">
+          {product ? (
+            // Product details view
+            <div className="space-y-4">
+              <div className="relative h-48 w-full bg-gray-100 dark:bg-gray-800 rounded">
+                <Image
+                  src={product.imageUrl || '/placeholder-product.png'}
+                  alt={product.name}
+                  fill
+                  style={{ objectFit: 'contain' }}
+                  className="p-2"
+                />
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{product.brand}</p>
+                <h3 className="text-xl font-semibold">{product.name}</h3>
+                <p className="text-sm mb-2">{product.description}</p>
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">
+                    {product.store}
+                  </span>
+                  <span className="font-bold">{formatPrice(product.price)}</span>
+                </div>
+              </div>
+              
+              <div className="flex space-x-2">
+                <Button 
+                  className="flex-1" 
+                  onClick={handleAddToList}
+                  disabled={loading}
+                >
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Add to List
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={resetScanner}
+                  disabled={loading}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Scan Again
+                </Button>
+              </div>
+            </div>
+          ) : (
+            // Scanner view
+            <div className="space-y-4">
+              <div className="relative aspect-video bg-gray-900 rounded overflow-hidden">
+                {cameraStarted ? (
+                  <Webcam
+                    ref={webcamRef}
+                    audio={false}
+                    videoConstraints={{
+                      facingMode: "environment",
+                      width: { min: 640, ideal: 1280 },
+                      height: { min: 480, ideal: 720 }
+                    }}
+                    screenshotFormat="image/jpeg"
+                    className="w-full h-full object-cover"
+                    onUserMediaError={handleCameraError}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                    <Camera className="h-20 w-20 text-gray-600" />
+                  </div>
+                )}
+                
+                {scanning && cameraStarted && (
+                  // Scanner overlay
+                  <div className="absolute inset-x-0 top-1/2 h-1 bg-red-500 animate-pulse"></div>
+                )}
+                
+                {loading && (
+                  // Loading overlay
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+                  </div>
+                )}
+              </div>
+              
+              {error && (
+                <div className="text-sm text-red-500 text-center py-2">
+                  {error}
+                </div>
+              )}
+              
+              <Button 
+                className="w-full" 
+                onClick={toggleCamera}
+                disabled={loading}
+              >
+                {cameraStarted ? 'Stop Camera' : 'Start Camera'}
+              </Button>
+              
+              <p className="text-sm text-center text-gray-500 dark:text-gray-400">
+                {cameraStarted 
+                  ? (scanning 
+                      ? "Position barcode within view to scan" 
+                      : "Processing...") 
+                  : "Click 'Start Camera' to begin scanning"}
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 } 

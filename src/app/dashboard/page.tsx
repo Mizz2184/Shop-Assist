@@ -1,22 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppContext } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Product } from '@/types/product';
+import React from 'react';
+import LoadingAnimation from '@/components/LoadingAnimation';
 
 export default function Dashboard() {
   const { language, currency, formatPrice } = useAppContext();
-  const { user, session, isLoading: authLoading } = useAuth();
+  const { user, session, isLoading: authLoading, getAccessToken } = useAuth();
   const router = useRouter();
   const [recentItems, setRecentItems] = useState<Product[]>([]);
   const [monthlySpending, setMonthlySpending] = useState<number>(0);
   const [promotions, setPromotions] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasFetchedRef = useRef(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -27,16 +30,25 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      if (!user || !session?.access_token) return; // Don't fetch data if not logged in or no token
+      if (!user) return; // Don't fetch data if not logged in
       
       setIsLoading(true);
       setError(null);
       
       try {
+        // Get a fresh access token
+        const token = await getAccessToken();
+        
+        if (!token) {
+          throw new Error(language === 'es' 
+            ? 'No se pudo obtener un token de acceso válido. Por favor, inicie sesión de nuevo.' 
+            : 'Could not get a valid access token. Please log in again.');
+        }
+        
         // Fetch recent grocery list items with authentication
         const groceryResponse = await fetch('/api/grocery-list', {
           headers: {
-            'Authorization': `Bearer ${session.access_token}`
+            'Authorization': `Bearer ${token}`
           }
         });
 
@@ -79,16 +91,23 @@ export default function Dashboard() {
       }
     };
     
-    if (user && session?.access_token) {
+    // Only fetch when component mounts or when dependencies change
+    if (user && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
       fetchDashboardData();
     }
-  }, [language, user, session]);
+    
+    // Clean up function
+    return () => {
+      // We don't reset the ref here to prevent refetching on every render
+    };
+  }, [language, user, getAccessToken]);
 
   // Show loading state while checking authentication
   if (authLoading) {
     return (
       <div className="flex justify-center items-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black dark:border-white"></div>
+        <LoadingAnimation text="Loading dashboard..." />
       </div>
     );
   }
@@ -101,7 +120,7 @@ export default function Dashboard() {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black dark:border-white"></div>
+        <LoadingAnimation text="Loading your dashboard data..." />
       </div>
     );
   }
