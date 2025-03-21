@@ -73,44 +73,44 @@ export default function BarcodeScannerPage() {
   
   // Handle successful barcode scan
   async function handleDecode(result: string) {
-    // Skip if already loading or showing product details
     if (loading || product) return;
     
     try {
-      // Pause scanning while processing this barcode
       setIsScanning(false);
       setLoading(true);
       setError(null);
       console.log('Barcode detected:', result);
       
-      // Fetch product data from API
-      console.log('Fetching product data for barcode:', result);
-      const response = await axios.get(`/api/products/barcode/${result}`);
+      // Fetch product data from Maxi Pali API
+      const response = await axios.get(`/api/products/maxipali/${result}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
       
       if (response.status === 200 && response.data) {
-        console.log('Product found:', response.data);
-        setProduct(response.data);
+        const productData = {
+          ...response.data,
+          store: 'Maxi Pali',
+          barcode: result
+        };
         
+        setProduct(productData);
         toast({
           title: 'Product found!',
-          description: `${response.data.name} has been scanned successfully.`,
+          description: `${productData.name} has been found at Maxi Pali.`,
           duration: 3000,
         });
       } else {
-        console.log('No product found for barcode:', result);
-        setError('Product not found. Please try scanning again.');
-        
-        // Add a small delay before resuming scan
+        setError('Product not found at Maxi Pali. Please try scanning again.');
         setTimeout(() => {
           setError(null);
           setIsScanning(true);
         }, 2000);
       }
     } catch (error) {
-      console.error('Error processing barcode:', error);
-      setError('Failed to process barcode. Please try again.');
-      
-      // Add a small delay before resuming scan
+      console.error('Error fetching from Maxi Pali:', error);
+      setError('Failed to fetch product information. Please try again.');
       setTimeout(() => {
         setError(null);
         setIsScanning(true);
@@ -341,4 +341,4 @@ export default function BarcodeScannerPage() {
       </Card>
     </div>
   );
-} 
+}
